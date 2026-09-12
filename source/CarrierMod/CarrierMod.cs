@@ -1144,17 +1144,21 @@ namespace CarrierMod
 
         private static object GetMemberStatic(System.Type t, string name)
         {
-            // Property FIRST: AccessTools.Field logs a WARNING on miss, and
-            // Il2Cpp auto-properties resolve either way. Field second.
+            // Manual lookup (AccessTools logs a WARNING on every miss; these
+            // probes are best-effort by design).
             try
             {
-                var p = HarmonyLib.AccessTools.Property(t, name);
+                var p = t.GetProperty(name, System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static |
+                    System.Reflection.BindingFlags.Instance);
                 if (p != null) return p.GetValue(null, null);
             }
             catch { }
             try
             {
-                var f = HarmonyLib.AccessTools.Field(t, name);
+                var f = t.GetField(name, System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static |
+                    System.Reflection.BindingFlags.Instance);
                 if (f != null && f.IsStatic) return f.GetValue(null);
             }
             catch { }
@@ -1412,16 +1416,21 @@ namespace CarrierMod
         private static object GetMember(object obj, string name)
         {
             if (obj == null) return null;
-            // Property first (see GetMemberStatic note on Field-miss warnings).
+            // Manual lookup (AccessTools logs a WARNING on every miss; these
+            // probes are best-effort by design).
             try
             {
-                var p = HarmonyLib.AccessTools.Property(obj.GetType(), name);
+                var p = obj.GetType().GetProperty(name, System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static |
+                    System.Reflection.BindingFlags.Instance);
                 if (p != null) return p.GetValue(obj, null);
             }
             catch { }
             try
             {
-                var f = HarmonyLib.AccessTools.Field(obj.GetType(), name);
+                var f = obj.GetType().GetField(name, System.Reflection.BindingFlags.Public |
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static |
+                    System.Reflection.BindingFlags.Instance);
                 if (f != null) return f.GetValue(obj);
             }
             catch { }
@@ -2310,6 +2319,23 @@ namespace CarrierMod
                 }
                 catch (Exception ex) { Log("[CarrierMod] plane " + idx + " clone threw: " + ex.Message); }
                 if (clone == null) { Log("[CarrierMod] plane " + idx + ": clone failed."); return; }
+                // FLEET HYGIENE (critical): the game auto-divisions temp battle
+                // ships. Plane divisions leak into the custom-battle settings
+                // store when the player's designs are saved — and the REPLAY
+                // loader then rebuilds them ("Division of PLANE X (1/3)"),
+                // NREing on plane stats (BeamMin/CWeight) and freezing.
+                // Remove the clone from its division immediately.
+                try
+                {
+                    var dv = clone.division;
+                    if (dv != null)
+                    {
+                        var rm = HarmonyLib.AccessTools.Method(typeof(Division), "RemoveShip");
+                        if (rm != null) rm.Invoke(dv, new object[] { clone, false, null });
+                        Log("[CarrierMod] plane " + idx + ": removed from auto-division.");
+                    }
+                }
+                catch (Exception ex) { Log("[CarrierMod] plane " + idx + " division removal: " + ex.Message); }
                 // PERSIST (once per battle — attempts are noisy while ToStore
                 // NREs): campaign battles cannot run CreateRandom, so they
                 // reload this file. Do NOT flag shells as shared designs.
@@ -2334,19 +2360,46 @@ namespace CarrierMod
                     try { player3 = carrier.player; } catch { }
                     if (player3 != null)
                     {
-                        foreach (var collName in new string[] { "designsAll", "designs", "fleetAll", "fleet", "shipDesigns", "sharedDesigns", "prewarmDesigns" })
+                        foreach (var collName in new string[] { "designsAll", "designs", "fleetAll", "fleet" })
                         {
                             try
                             {
                                 var collObj = GetMember(player3, collName);
-                                var asEnum = collObj as System.Collections.IEnumerable;
-                                if (asEnum == null || collObj is string) continue;
-                                var remM = collObj.GetType().GetMethod("Remove", new System.Type[] { typeof(Ship) });
-                                var listObj = collObj as Il2CppSystem.Collections.Generic.List<Ship>;
-                                if (listObj != null && remM != null)
+                                // NOTE: these are Il2Cpp IEnumerables (computed
+                                // properties) — a System.Collections.IEnumerable
+                                // cast silently fails (why eviction found 0 for
+                                // months). Pump the Il2Cpp enumerator, collect
+                                // our plane designs, and try IList removal.
+                                var ien = collObj as Il2CppSystem.Collections.IEnumerable;
+                                if (ien == null) continue;
+                                var victims = new System.Collections.Generic.List<int>();
+                                var lstCast = collObj as Il2CppSystem.Collections.Generic.IList<Ship>;
+                                var e = ien.GetEnumerator();
+                                int walk = 0;
+                                while (true)
                                 {
-                                    if ((bool)remM.Invoke(collObj, new object[] { created })) { evicted++; Log("[CarrierMod] evicted plane design from player." + collName); }
+                                    bool more = false;
+                                    try { more = e.MoveNext(); } catch { break; }
+                                    if (!more) break;
+                                    try
+                                    {
+                                        var cur = e.Current as Ship;
+                                        if (cur == null) { walk++; continue; }
+                                        string hn = null;
+                                        try { hn = cur.hull != null ? cur.hull.name : null; } catch { }
+                                        if (hn == "plane_strike_1" && lstCast != null) victims.Add(walk);
+                                        walk++;
+                                    }
+                                    catch { walk++; }
                                 }
+                                if (lstCast != null)
+                                {
+                                    for (int vi = victims.Count; vi-- > 0; )
+                                    {
+                                        try { lstCast.RemoveAt(victims[vi]); evicted++; } catch { }
+                                    }
+                                }
+                                // computed enumerable: nothing to remove from
                             }
                             catch { }
                         }
