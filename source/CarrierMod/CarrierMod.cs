@@ -1971,6 +1971,18 @@ namespace CarrierMod
         {
             _activeSettles++;
             for (int sw = 0; sw < 180; sw++) yield return new UnityEngine.WaitForSeconds(0.25f);
+            // LOADING GATE: the 45s timer is not enough for heavy fleets —
+            // starting design factories while the loading screen is up
+            // deadlocks the loader ("Starting Battle" forever, 01:37
+            // session). Hold until the game reports loading finished.
+            float gateUntil = UnityEngine.Time.time + 300f;
+            while (UnityEngine.Time.time < gateUntil)
+            {
+                bool loading = false;
+                try { loading = GameManager.IsLoadingAny; } catch { }
+                if (!loading) break;
+                yield return new UnityEngine.WaitForSeconds(0.5f);
+            }
             try { if (carrier == null || carrier.isSinking || carrier.isDead) { Log("[CarrierMod] carrier lost during settle; skipping squadron."); yield break; } } catch { }
             Log("[CarrierMod] battle settled; spawning squadron for " + (carrier.name ?? "?") + " now.");
             object player = null;
