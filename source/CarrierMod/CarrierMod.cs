@@ -1969,6 +1969,7 @@ namespace CarrierMod
         // pipeline per carrier, global unique plane idx.
         private static IEnumerator SpawnAfterSettle(Ship carrier)
         {
+            _activeSettles++;
             for (int sw = 0; sw < 180; sw++) yield return new UnityEngine.WaitForSeconds(0.25f);
             try { if (carrier == null || carrier.isSinking || carrier.isDead) { Log("[CarrierMod] carrier lost during settle; skipping squadron."); yield break; } } catch { }
             Log("[CarrierMod] battle settled; spawning squadron for " + (carrier.name ?? "?") + " now.");
@@ -2044,6 +2045,33 @@ namespace CarrierMod
                 yield return new UnityEngine.WaitForSeconds(WAVE_GAP);
             }
             Log("[CarrierMod] all waves airborne for " + (carrier.name ?? "?") + ".");
+            _activeSettles--;
+            // LEAK SWEEP (last carrier standing only): CreateRandom throws
+            // leave design shells with no callback — destroy leftover plane
+            // design husks so the next battle's loader never sweeps them.
+            if (!_campaignMode && _activeSettles <= 0)
+            {
+                int killed = 0;
+                try
+                {
+                    foreach (var s in UnityEngine.Object.FindObjectsOfType<Ship>())
+                    {
+                        try
+                        {
+                            if (s == null) continue;
+                            bool isD = false; try { isD = s.isDesign; } catch { }
+                            if (!isD) continue;
+                            string h = null; try { h = s.hull != null ? s.hull.name : null; } catch { }
+                            if (h != "plane_strike_1") continue;
+                            var go = s.gameObject;
+                            if (go != null) { UnityEngine.Object.Destroy(go); killed++; }
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+                if (killed > 0) Log("[CarrierMod] leak sweep: destroyed " + killed + " leftover plane design shells.");
+            }
             yield break;
         }
 
@@ -2057,6 +2085,7 @@ namespace CarrierMod
         private static Ship _sharedPlaneDesignCache = null;
         private static bool _planeDesignSaved = false;
         private static bool _saveAttempted = false;
+        private static int _activeSettles = 0;
         private static int _nextWaveId = 0;
         private static readonly System.Collections.Generic.Dictionary<int, SquadronState> _squadronStates =
             new System.Collections.Generic.Dictionary<int, SquadronState>();
@@ -2359,6 +2388,20 @@ namespace CarrierMod
                         Log("[CarrierMod] plane " + idx + ": attach failed; plane stays invisible (still armed).");
                 }
                 MakeKinematic(clone);
+                // SHELL DISPOSAL: the donated design shell is an empty husk
+                // (its part now lives on the clone). Parked husks leak into
+                // the NEXT battle scene and hang replays (loader preview +
+                // CPU-creator sweep). Destroy it — skirmish only; campaign
+                // designs come from the shared pool and are reused.
+                if (!_campaignMode)
+                {
+                    try
+                    {
+                        UnityEngine.Object.Destroy(design.gameObject);
+                        Log("[CarrierMod] plane " + idx + ": design shell destroyed (no husk leaks).");
+                    }
+                    catch { }
+                }
             }
             catch (Exception ex) { Log("[CarrierMod] plane " + idx + " attach pipeline error: " + ex.Message); }
             MelonCoroutines.Start(PlaneAI(clone, carrier, idx, mark, waveId, slot));
