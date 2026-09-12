@@ -1895,19 +1895,22 @@ namespace CarrierMod
             try
             {
                 var uimT = SafeFindType("TweaksAndFixes", "TweaksAndFixes.UiM");
-                if (uimT == null) return;
+                if (uimT == null) { Log("[CarrierMod] TAF purge: UiM type missing."); return; }
                 var mod = GetMemberStatic(uimT, "skirmishSetupMod");
-                if (mod == null) return;
+                if (mod == null) { Log("[CarrierMod] TAF purge: skirmishSetupMod missing."); return; }
                 int purged = 0;
+                string report = "";
                 foreach (var playerName in new string[] { "player1", "player2" })
                 {
                     try
                     {
                         var sp = GetMember(mod, playerName);
-                        if (sp == null) continue;
+                        if (sp == null) { report += " [" + playerName + ": null]"; continue; }
+                        int pDesigns = 0, pInst = 0, pAmounts = 0, haveDesigns = -1, haveAmounts = -1;
                         var designs = GetMember(sp, "shipDesigns") as System.Collections.Generic.Dictionary<Guid, Ship.Store>;
                         if (designs != null)
                         {
+                            haveDesigns = designs.Count;
                             var dead = new System.Collections.Generic.List<Guid>();
                             foreach (var kvp in designs)
                             {
@@ -1918,7 +1921,7 @@ namespace CarrierMod
                                 }
                                 catch { }
                             }
-                            foreach (var k in dead) { designs.Remove(k); purged++; }
+                            foreach (var k in dead) { designs.Remove(k); purged++; pDesigns++; }
                         }
                         var instances = GetMember(sp, "shipInstances") as System.Collections.Generic.Dictionary<Guid, Ship>;
                         if (instances != null)
@@ -1936,12 +1939,31 @@ namespace CarrierMod
                                 }
                                 catch { }
                             }
-                            foreach (var k in deadI) { instances.Remove(k); }
+                            foreach (var k in deadI) { instances.Remove(k); pInst++; }
                         }
+                        // shipAmounts: plane type count tells prep to BUILD planes
+                        // even with designs purged — remove the type entry too.
+                        var amounts = GetMember(sp, "shipAmounts") as System.Collections.Generic.Dictionary<ShipType, int>;
+                        if (amounts != null)
+                        {
+                            haveAmounts = amounts.Count;
+                            var deadT = new System.Collections.Generic.List<ShipType>();
+                            foreach (var kvp in amounts)
+                            {
+                                try
+                                {
+                                    if (kvp.Key != null && kvp.Key.name == "plane") deadT.Add(kvp.Key);
+                                }
+                                catch { }
+                            }
+                            foreach (var t in deadT) { amounts.Remove(t); purged++; pAmounts++; }
+                        }
+                        report += " [" + playerName + ": designs " + pDesigns + "/" + haveDesigns + ", inst " + pInst + ", amounts " + pAmounts + "/" + haveAmounts + "]";
                     }
                     catch { }
                 }
-                if (purged > 0) Log("[CarrierMod] purged " + purged + " plane designs from TAF skirmish setup (replay-safe).");
+                if (purged > 0) Log("[CarrierMod] TAF purge: removed " + purged + " plane entries." + report);
+                else LogVerbose("[CarrierMod] TAF purge: nothing to remove." + report);
             }
             catch (Exception ex) { Log("[CarrierMod] PurgeTafPlaneDesigns error: " + ex.Message); }
         }
