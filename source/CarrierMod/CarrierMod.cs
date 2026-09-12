@@ -283,6 +283,8 @@ namespace CarrierMod
                 // Eternal spawn watcher: covers ALL battle modes from boot
                 // (custom + campaign + missions). See SpawnPlanesWhenReady.
                 EnsureSpawnWatcher();
+                // One-shot purge once TAF + GameData are live (boot leftovers).
+                MelonCoroutines.Start(StartupPurgeWhenReady());
             }
             catch (Exception ex)
             {
@@ -1879,6 +1881,78 @@ namespace CarrierMod
             catch { return false; }
         }
 
+        // ===== TAF SKIRMISH DESIGN PURGE =====
+        // TAF's UiM.SkirmishSetupMod.player1/player2.shipDesigns accumulates
+        // every CreateRandom plane design we mint. The replay/constructor flow
+        // ("Reiniting Player Ships") rebuilds those designs as real ships, and
+        // the vanilla PrepareBattle spawns them ("spawn france: ... plane: ...")
+        // — dying on plane stats (RefreshHull/BeamMin/CreateVisualForSections
+        // NREs) and freezing the loader. Purge plane entries so the pipeline
+        // never sees them. (User diagnosis: "ships are cached and recycled" —
+        // confirmed: managed dicts in TAF's skirmish setup mod.)
+        private static void PurgeTafPlaneDesigns()
+        {
+            try
+            {
+                var uimT = SafeFindType("TweaksAndFixes", "TweaksAndFixes.UiM");
+                if (uimT == null) return;
+                var mod = GetMemberStatic(uimT, "skirmishSetupMod");
+                if (mod == null) return;
+                int purged = 0;
+                foreach (var playerName in new string[] { "player1", "player2" })
+                {
+                    try
+                    {
+                        var sp = GetMember(mod, playerName);
+                        if (sp == null) continue;
+                        var designs = GetMember(sp, "shipDesigns") as System.Collections.Generic.Dictionary<Guid, Ship.Store>;
+                        if (designs != null)
+                        {
+                            var dead = new System.Collections.Generic.List<Guid>();
+                            foreach (var kvp in designs)
+                            {
+                                try
+                                {
+                                    var st = kvp.Value;
+                                    if (st != null && st.shipType == "plane") dead.Add(kvp.Key);
+                                }
+                                catch { }
+                            }
+                            foreach (var k in dead) { designs.Remove(k); purged++; }
+                        }
+                        var instances = GetMember(sp, "shipInstances") as System.Collections.Generic.Dictionary<Guid, Ship>;
+                        if (instances != null)
+                        {
+                            var deadI = new System.Collections.Generic.List<Guid>();
+                            foreach (var kvp in instances)
+                            {
+                                try
+                                {
+                                    var s = kvp.Value;
+                                    if (s == null) { deadI.Add(kvp.Key); continue; }
+                                    string h = null;
+                                    try { h = s.hull != null ? s.hull.name : null; } catch { }
+                                    if (h == "plane_strike_1") deadI.Add(kvp.Key);
+                                }
+                                catch { }
+                            }
+                            foreach (var k in deadI) { instances.Remove(k); }
+                        }
+                    }
+                    catch { }
+                }
+                if (purged > 0) Log("[CarrierMod] purged " + purged + " plane designs from TAF skirmish setup (replay-safe).");
+            }
+            catch (Exception ex) { Log("[CarrierMod] PurgeTafPlaneDesigns error: " + ex.Message); }
+        }
+
+        private static System.Collections.IEnumerator StartupPurgeWhenReady()
+        {
+            while (G.GameData == null) yield return new UnityEngine.WaitForSeconds(1f);
+            yield return new UnityEngine.WaitForSeconds(3f);
+            PurgeTafPlaneDesigns();
+        }
+
         private static void ArmSpawnExperiment()
         {
             try
@@ -1908,6 +1982,7 @@ namespace CarrierMod
                 }
                 _wasArmed = true;
                 _lastArm = now;
+                PurgeTafPlaneDesigns();
         LogVerbose("[CarrierMod] PreInitCustomBattle: spawn experiment armed; starting watcher.");
                 EnsureSpawnWatcher();
             }
@@ -2092,6 +2167,10 @@ namespace CarrierMod
                 }
                 catch { }
                 if (parked > 0) Log("[CarrierMod] leak sweep: parked " + parked + " leftover plane design shells.");
+                // Purge the designs we just minted from TAF's skirmish setup —
+                // otherwise the constructor/replay "Reiniting" rebuilds them as
+                // real ships and the loader dies on plane stats.
+                PurgeTafPlaneDesigns();
             }
             yield break;
         }
