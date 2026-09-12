@@ -1307,6 +1307,8 @@ namespace CarrierMod
         {
             public static void Run()
             {
+                // Setup scene: purge before the fleet snapshot.
+                try { PurgeTafPlaneDesigns(); } catch { }
                 try
                 {
                     var ui = G.ui;
@@ -1376,6 +1378,9 @@ namespace CarrierMod
         {
             public static void Run()
             {
+                // Setup scene: purge before the fleet snapshot (Reiniting reads
+                // the same registries moments later).
+                try { PurgeTafPlaneDesigns(); } catch { }
                 try { TryInjectVanillaSkirmish(); } catch { }
             }
         }
@@ -2073,6 +2078,7 @@ namespace CarrierMod
             // Runs every ~60s so timing never depends on how the battle ends.
             int waits = 0;
             int purgeWaits = 0;
+            bool wasBattle = true; // assume battle so the first exit purges
             while (true)
             {
                 yield return null;
@@ -2084,6 +2090,20 @@ namespace CarrierMod
                     try { PurgeTafPlaneDesigns(); } catch { }
                 }
                 if (waits % 300 != 0) continue; // poll ~every 5s
+                // Transition purge: the fleet snapshot for the NEXT battle is
+                // written when entering the constructor — purge the moment we
+                // leave battle state so the snapshot can never include planes.
+                try
+                {
+                    bool inBattle = GameManager.IsBattle;
+                    if (wasBattle && !inBattle)
+                    {
+                        Log("[CarrierMod] left battle; purging plane designs before setup snapshot.");
+                        try { PurgeTafPlaneDesigns(); } catch { }
+                    }
+                    wasBattle = inBattle;
+                }
+                catch { }
                 try
                 {
                     var ships = UnityEngine.Object.FindObjectsOfType<Ship>();
