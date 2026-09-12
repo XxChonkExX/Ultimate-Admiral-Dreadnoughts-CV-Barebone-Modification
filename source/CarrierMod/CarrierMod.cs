@@ -236,6 +236,10 @@ namespace CarrierMod
                     PatchOne(hm, "Ui.InitialCustomBattleShipTypeButtonAndShips", typeof(Ui), "InitialCustomBattleShipTypeButtonAndShips", null, typeof(Patch_SkirmishButtons));
                     PatchOne(hm, "Ui.SkirmishSetupInit", typeof(Ui), "SkirmishSetupInit", null, typeof(Patch_SkirmishInit));
                     PatchOne(hm, "BattleManager.PreInitCustomBattle", typeof(BattleManager), "PreInitCustomBattle", typeof(Patch_PreInitBattle), null);
+                    // REPLAY path: UpdateLoadingCustomBattleFromSave/InitCustomBattleFromSave
+                    // does NOT call PreInitCustomBattle — without this hook the
+                    // TAF purge + battle reset never run on replays.
+                    PatchOne(hm, "BattleManager.InitCustomBattleFromSave", typeof(BattleManager), "InitCustomBattleFromSave", typeof(Patch_PreInitBattle), null);
                     // Wing-only strike boost: Torpedo.Create(Part from, ...) — the
                     // Part arg identifies the firing tube, so the boost is
                     // per-tube and cannot leak to ship torpedoes. Param name
@@ -2086,6 +2090,11 @@ namespace CarrierMod
         private static IEnumerator SpawnAfterSettle(Ship carrier)
         {
             _activeSettles++;
+            // Capture the name NOW: scene teardown can destroy the carrier
+            // while this coroutine still runs (NRE on .name killed the whole
+            // pipeline in the 04:50 session).
+            string carrierName = "?";
+            try { carrierName = carrier != null && carrier.name != null ? carrier.name : "?"; } catch { }
             for (int sw = 0; sw < 180; sw++) yield return new UnityEngine.WaitForSeconds(0.25f);
             // LOADING GATE: the 45s timer is not enough for heavy fleets —
             // starting design factories while the loading screen is up
@@ -2100,7 +2109,7 @@ namespace CarrierMod
                 yield return new UnityEngine.WaitForSeconds(0.5f);
             }
             try { if (carrier == null || carrier.isSinking || carrier.isDead) { Log("[CarrierMod] carrier lost during settle; skipping squadron."); yield break; } } catch { }
-            Log("[CarrierMod] battle settled; spawning squadron for " + (carrier.name ?? "?") + " now.");
+            Log("[CarrierMod] battle settled; spawning squadron for " + carrierName + " now.");
             object player = null;
             try { player = carrier.player; } catch (Exception ex) { Log("[CarrierMod] carrier.player threw: " + ex.Message); }
             if (player == null) { Log("[CarrierMod] spawn: carrier player null; done."); yield break; }
@@ -2152,7 +2161,7 @@ namespace CarrierMod
                     continue;
                 }
                 int waveId = _nextWaveId++;
-                Log("[CarrierMod] wave " + waveId + " (" + bestMark + "): " + bestRem + " planes launching from " + (carrier.name ?? "?") + ".");
+                Log("[CarrierMod] wave " + waveId + " (" + bestMark + "): " + bestRem + " planes launching from " + carrierName + ".");
                 int l0 = 0; launchedPerMark.TryGetValue(bestMark, out l0);
                 launchedPerMark[bestMark] = l0 + bestRem;
                 for (int slot = 0; slot < bestRem; slot++)
@@ -2172,7 +2181,7 @@ namespace CarrierMod
                 }
                 yield return new UnityEngine.WaitForSeconds(WAVE_GAP);
             }
-            Log("[CarrierMod] all waves airborne for " + (carrier.name ?? "?") + ".");
+            Log("[CarrierMod] all waves airborne for " + carrierName + ".");
             _activeSettles--;
             // Leak sweep (last carrier standing only): CreateRandom throws
             // leave design shells with no callback — PARK them deep (destroy
