@@ -2366,16 +2366,21 @@ namespace CarrierMod
         {
             // NOTE: do NOT set IsSharedDesign on the shell — flagging leaked
             // design shells surfaces them in the designer + CPU-creator sweep
-            // and hangs battle replays (22:20 session). Campaign will need a
-            // different minting route (ToStore NREs on our shells: step2).
+            // and hangs battle replays (22:20 session). The clone (with parts
+            // + visuals) is tried first — a partless shell has nothing
+            // serializable and ToStore NREs on it.
             try
             {
                 Ship.Store store = null;
-                try { store = design.ToStore(); } catch (Exception ex) { Log("[CarrierMod] save step2 (design.ToStore) threw: " + ex.Message); }
-                if (store == null && clone != null)
+                if (clone != null)
                 {
-                    try { store = clone.ToStore(); Log("[CarrierMod] save step2b: using CLONE store fallback."); }
-                    catch (Exception ex) { Log("[CarrierMod] save step2b (clone.ToStore) threw: " + ex.Message); }
+                    try { store = clone.ToStore(); Log("[CarrierMod] save step1: CLONE store ok."); }
+                    catch (Exception ex) { Log("[CarrierMod] save step1 (clone.ToStore) threw: " + ex.Message); }
+                }
+                if (store == null)
+                {
+                    try { store = design.ToStore(); Log("[CarrierMod] save step2: design store ok."); }
+                    catch (Exception ex) { Log("[CarrierMod] save step2 (design.ToStore) threw: " + ex.Message); }
                 }
                 if (store == null) { Log("[CarrierMod] save failed: no store (campaign design not minted)."); return; }
                 byte[] bytes = null;
@@ -2437,14 +2442,6 @@ namespace CarrierMod
                     }
                 }
                 catch (Exception ex) { Log("[CarrierMod] plane " + idx + " division removal: " + ex.Message); }
-                // PERSIST (once per battle — attempts are noisy while ToStore
-                // NREs): campaign battles cannot run CreateRandom, so they
-                // reload this file. Do NOT flag shells as shared designs.
-                if (!_planeDesignSaved && !_saveAttempted)
-                {
-                    _saveAttempted = true;
-                    SaveSharedPlaneDesign(created, clone);
-                }
                 // line-astern berth near the carrier
                 try
                 {
@@ -2549,7 +2546,18 @@ namespace CarrierMod
                     var ap = HarmonyLib.AccessTools.Method(typeof(Ship), "AddPart");
                     var lm = HarmonyLib.AccessTools.Method(typeof(Part), "LoadModel");
                     if (TryAttachPart(clone, original, ap, lm))
+                    {
                         Log("[CarrierMod] plane " + idx + ": transferred 1/1 parts (original).");
+                        // PERSIST (once per battle): the clone is only a valid
+                        // ToStore candidate AFTER it has parts + visuals. A
+                        // partless shell has nothing serializable and ToStore
+                        // NREs on it. Campaign battles reload this file.
+                        if (!_planeDesignSaved && !_saveAttempted)
+                        {
+                            _saveAttempted = true;
+                            SaveSharedPlaneDesign(design, clone);
+                        }
+                    }
                     else
                         Log("[CarrierMod] plane " + idx + ": attach failed; plane stays invisible (still armed).");
                 }
