@@ -2028,11 +2028,21 @@ namespace CarrierMod
             // (campaign battles load via BattleManager.PrepareBattle, which
             // never fires PreInitCustomBattle; we don't care which loader
             // ran, we just watch for deployed CVs). One-time arming guard
+            // TAF-purge tick: minted plane designs must not survive the battle
+            // in TAF's skirmish registry (replays rebuild them as real ships).
+            // Runs every ~60s so timing never depends on how the battle ends.
             int waits = 0;
+            int purgeWaits = 0;
             while (true)
             {
                 yield return null;
                 waits++;
+                purgeWaits++;
+                if (purgeWaits >= 3600)
+                {
+                    purgeWaits = 0;
+                    try { PurgeTafPlaneDesigns(); } catch { }
+                }
                 if (waits % 300 != 0) continue; // poll ~every 5s
                 try
                 {
