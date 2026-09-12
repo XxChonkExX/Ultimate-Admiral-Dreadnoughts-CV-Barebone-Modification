@@ -1891,6 +1891,7 @@ namespace CarrierMod
                         // CreateRandom throws) persists there and resets here —
                         // skirmish always retries the real factory.
                         _campaignMode = false; _sharedPlaneDesignCache = null;
+                        _saveAttempted = false;
                         _battleShips.Clear();
                         _secCountCache.Clear(); _secCountTime.Clear();
                         Log("[CarrierMod] new battle detected; spawn guard reset.");
@@ -2055,6 +2056,7 @@ namespace CarrierMod
         private static bool _campaignMode = false;
         private static Ship _sharedPlaneDesignCache = null;
         private static bool _planeDesignSaved = false;
+        private static bool _saveAttempted = false;
         private static int _nextWaveId = 0;
         private static readonly System.Collections.Generic.Dictionary<int, SquadronState> _squadronStates =
             new System.Collections.Generic.Dictionary<int, SquadronState>();
@@ -2211,9 +2213,12 @@ namespace CarrierMod
         // session) — clone.ToStore is the fallback source.
         private static void SaveSharedPlaneDesign(Ship design, Ship clone)
         {
+            // NOTE: do NOT set IsSharedDesign on the shell — flagging leaked
+            // design shells surfaces them in the designer + CPU-creator sweep
+            // and hangs battle replays (22:20 session). Campaign will need a
+            // different minting route (ToStore NREs on our shells: step2).
             try
             {
-                try { design.IsSharedDesign = true; } catch (Exception ex) { Log("[CarrierMod] save step1 (IsSharedDesign) threw: " + ex.Message); }
                 Ship.Store store = null;
                 try { store = design.ToStore(); } catch (Exception ex) { Log("[CarrierMod] save step2 (design.ToStore) threw: " + ex.Message); }
                 if (store == null && clone != null)
@@ -2221,7 +2226,7 @@ namespace CarrierMod
                     try { store = clone.ToStore(); Log("[CarrierMod] save step2b: using CLONE store fallback."); }
                     catch (Exception ex) { Log("[CarrierMod] save step2b (clone.ToStore) threw: " + ex.Message); }
                 }
-                if (store == null) { Log("[CarrierMod] save failed: no store."); return; }
+                if (store == null) { Log("[CarrierMod] save failed: no store (campaign design not minted)."); return; }
                 byte[] bytes = null;
                 try { bytes = Util.SerializeObjectByte(store); } catch (Exception ex) { Log("[CarrierMod] save step3 (serialize) threw: " + ex.Message); }
                 if (bytes == null) { Log("[CarrierMod] save failed: bytes null."); return; }
@@ -2264,10 +2269,14 @@ namespace CarrierMod
                 }
                 catch (Exception ex) { Log("[CarrierMod] plane " + idx + " clone threw: " + ex.Message); }
                 if (clone == null) { Log("[CarrierMod] plane " + idx + ": clone failed."); return; }
-                // PERSIST (after clone exists — clone.ToStore is the fallback
-                // source if the design shell's store NREs): campaign battles
-                // cannot run CreateRandom, so they reload this file.
-                if (!_planeDesignSaved) SaveSharedPlaneDesign(created, clone);
+                // PERSIST (once per battle — attempts are noisy while ToStore
+                // NREs): campaign battles cannot run CreateRandom, so they
+                // reload this file. Do NOT flag shells as shared designs.
+                if (!_planeDesignSaved && !_saveAttempted)
+                {
+                    _saveAttempted = true;
+                    SaveSharedPlaneDesign(created, clone);
+                }
                 // line-astern berth near the carrier
                 try
                 {
@@ -2284,7 +2293,7 @@ namespace CarrierMod
                     try { player3 = carrier.player; } catch { }
                     if (player3 != null)
                     {
-                        foreach (var collName in new string[] { "designsAll", "designs", "fleetAll", "fleet" })
+                        foreach (var collName in new string[] { "designsAll", "designs", "fleetAll", "fleet", "shipDesigns", "sharedDesigns", "prewarmDesigns" })
                         {
                             try
                             {
