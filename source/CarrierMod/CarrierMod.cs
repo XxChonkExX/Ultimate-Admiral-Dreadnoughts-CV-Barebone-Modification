@@ -1967,7 +1967,43 @@ namespace CarrierMod
                     catch { }
                 }
                 if (purged > 0) Log("[CarrierMod] TAF purge: removed " + purged + " plane entries." + report);
-                else LogVerbose("[CarrierMod] TAF purge: nothing to remove." + report);
+                else Log("[CarrierMod] TAF purge: nothing to remove." + report);
+                // BattleManager.restartBattleShips feeds the replay path
+                // directly — strip plane hulls there too.
+                try
+                {
+                    var bmT = typeof(BattleManager);
+                    var instProp = bmT.GetProperty("Instance", System.Reflection.BindingFlags.Public |
+                        System.Reflection.BindingFlags.Static);
+                    var inst = instProp != null ? instProp.GetValue(null, null) : null;
+                    if (inst != null)
+                    {
+                        var rb = GetMember(inst, "restartBattleShips") as Il2CppSystem.Collections.Generic.List<Ship>;
+                        if (rb != null)
+                        {
+                            int rbKilled = 0;
+                            var deadRb = new System.Collections.Generic.List<int>();
+                            for (int i = 0; i < rb.Count; i++)
+                            {
+                                try
+                                {
+                                    var sh = rb[i];
+                                    if (sh == null) continue;
+                                    string hn = null;
+                                    try { hn = sh.hull != null ? sh.hull.name : null; } catch { }
+                                    if (hn == "plane_strike_1") deadRb.Add(i);
+                                }
+                                catch { }
+                            }
+                            for (int i = deadRb.Count; i-- > 0; )
+                            {
+                                try { rb.RemoveAt(deadRb[i]); rbKilled++; } catch { }
+                            }
+                            if (rbKilled > 0) Log("[CarrierMod] TAF purge: removed " + rbKilled + " planes from restartBattleShips.");
+                        }
+                    }
+                }
+                catch { }
             }
             catch (Exception ex) { Log("[CarrierMod] PurgeTafPlaneDesigns error: " + ex.Message); }
         }
