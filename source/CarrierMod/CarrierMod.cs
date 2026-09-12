@@ -2058,12 +2058,12 @@ namespace CarrierMod
             }
             Log("[CarrierMod] all waves airborne for " + (carrier.name ?? "?") + ".");
             _activeSettles--;
-            // LEAK SWEEP (last carrier standing only): CreateRandom throws
-            // leave design shells with no callback — destroy leftover plane
-            // design husks so the next battle's loader never sweeps them.
+            // Leak sweep (last carrier standing only): CreateRandom throws
+            // leave design shells with no callback — PARK them deep (destroy
+            // leaves dangling refs that freeze the next loader).
             if (!_campaignMode && _activeSettles <= 0)
             {
-                int killed = 0;
+                int parked = 0;
                 try
                 {
                     foreach (var s in UnityEngine.Object.FindObjectsOfType<Ship>())
@@ -2075,14 +2075,14 @@ namespace CarrierMod
                             if (!isD) continue;
                             string h = null; try { h = s.hull != null ? s.hull.name : null; } catch { }
                             if (h != "plane_strike_1") continue;
-                            var go = s.gameObject;
-                            if (go != null) { UnityEngine.Object.Destroy(go); killed++; }
+                            if (s.transform != null) s.transform.position = new UnityEngine.Vector3(0f, -2000f, 0f);
+                            parked++;
                         }
                         catch { }
                     }
                 }
                 catch { }
-                if (killed > 0) Log("[CarrierMod] leak sweep: destroyed " + killed + " leftover plane design shells.");
+                if (parked > 0) Log("[CarrierMod] leak sweep: parked " + parked + " leftover plane design shells.");
             }
             yield break;
         }
@@ -2400,20 +2400,16 @@ namespace CarrierMod
                         Log("[CarrierMod] plane " + idx + ": attach failed; plane stays invisible (still armed).");
                 }
                 MakeKinematic(clone);
-                // SHELL DISPOSAL: the donated design shell is an empty husk
-                // (its part now lives on the clone). Parked husks leak into
-                // the NEXT battle scene and hang replays (loader preview +
-                // CPU-creator sweep). Destroy it — skirmish only; campaign
-                // designs come from the shared pool and are reused.
-                if (!_campaignMode)
+                // SHELL DISPOSAL (reverted): destroying shells left dangling
+                // references that froze the NEXT battle's loader (01:54
+                // session). Parked husks are the proven-safe state — the
+                // 22:20 session ran three battles in a row with them.
+                try
                 {
-                    try
-                    {
-                        UnityEngine.Object.Destroy(design.gameObject);
-                        Log("[CarrierMod] plane " + idx + ": design shell destroyed (no husk leaks).");
-                    }
-                    catch { }
+                    design.transform.position = new UnityEngine.Vector3(
+                        carrier.transform.position.x, carrier.transform.position.y - 2000f, carrier.transform.position.z);
                 }
+                catch { }
             }
             catch (Exception ex) { Log("[CarrierMod] plane " + idx + " attach pipeline error: " + ex.Message); }
             MelonCoroutines.Start(PlaneAI(clone, carrier, idx, mark, waveId, slot));
