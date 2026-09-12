@@ -1,0 +1,27 @@
+# Build artifacts
+bin/
+obj/
+*.user
+
+# Local-only game data (verbatim vanilla CSVs — not redistributable)
+/reference/
+
+# Dev-only CSV copies (install set lives in GameFiles/Mods)
+/csv/
+
+# Decompiled IL2CPP sources (derived game code — not redistributable)
+/source/asm_dump/
+/source/asm_dump2/
+/source/asm_verify/
+
+# Runtime output
+*.log
+/Mods/
+tools/*.bak
+
+# Local-path helper batches (rewrite paths for your machine)
+tools/*.bat
+
+# OS cruft
+Thumbs.db
+.DS_Store
