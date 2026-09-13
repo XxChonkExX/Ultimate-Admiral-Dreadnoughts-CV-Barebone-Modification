@@ -2332,6 +2332,26 @@ namespace CarrierMod
         // spam the log while one sits open).
         private static int _handledDlgId = 0;
 
+        // TMP rich-text markup (<color>, <b>...) lives in .text — strip tags
+        // before any comparison, or exact matches never hit styled prompts.
+        private static string StripTags(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            try
+            {
+                var sb = new System.Text.StringBuilder(s.Length);
+                bool inTag = false;
+                foreach (var ch in s)
+                {
+                    if (ch == '<') { inTag = true; continue; }
+                    if (ch == '>') { inTag = false; continue; }
+                    if (!inTag) sb.Append(ch);
+                }
+                return sb.ToString();
+            }
+            catch { return s; }
+        }
+
         private static bool KillPlayAgainYes()
         {
             bool handled = false;
@@ -2356,7 +2376,7 @@ namespace CarrierMod
                             try
                             {
                                 if (t == null || t.gameObject == null || !t.gameObject.activeInHierarchy) continue;
-                                string tx = (t.text ?? "").Trim().ToLowerInvariant();
+                                string tx = StripTags(t.text ?? "").Trim().ToLowerInvariant();
                                 if (tx == "play again?" || tx == "play again" || tx.Contains("rematch"))
                                 {
                                     dlgRoot = t.gameObject.transform;
@@ -2381,7 +2401,7 @@ namespace CarrierMod
                                 try
                                 {
                                     if (t == null || t.gameObject == null || !t.gameObject.activeInHierarchy) continue;
-                                    string tx = (t.text ?? "").Trim().ToLowerInvariant();
+                                    string tx = StripTags(t.text ?? "").Trim().ToLowerInvariant();
                                     if (tx == "play again?" || tx == "play again" || tx.Contains("rematch"))
                                     {
                                         dlgRoot = t.gameObject.transform;
@@ -2441,11 +2461,11 @@ namespace CarrierMod
                             try
                             {
                                 if (b == null || b.gameObject == null || !b.gameObject.activeInHierarchy) continue;
-                                string bt = "";
+                                string bt = ""; // (stripped below)
                                 try
                                 {
                                     var tt = b.gameObject.GetComponentInChildren<Il2CppTMPro.TMP_Text>();
-                                    if (tt != null) bt = tt.text ?? "";
+                                    if (tt != null) bt = StripTags(tt.text ?? "");
                                 }
                                 catch { }
                                 if (string.IsNullOrEmpty(bt))
@@ -2453,7 +2473,7 @@ namespace CarrierMod
                                     try
                                     {
                                         var tu = b.gameObject.GetComponentInChildren<UnityEngine.UI.Text>();
-                                        if (tu != null) bt = tu.text ?? "";
+                                        if (tu != null) bt = StripTags(tu.text ?? "");
                                     }
                                     catch { }
                                 }
@@ -2626,10 +2646,10 @@ namespace CarrierMod
                 // while the battle is still technically live, so battle-exit
                 // triggers fire too late. Runs whenever carriers spawned.
                 if (waits % 60 == 0) { try { KillPlayAgainYes(); } catch { } }
-                // Fast dialog-kill tick (~1s): the Play-again dialog appears
+                // Fast dialog-kill tick (~0.5s): the Play-again dialog appears
                 // while the battle is still technically live, so exit-based
                 // triggers fire too late. Gate is inside KillPlayAgainYes.
-                if (waits % 60 == 0) { try { KillPlayAgainYes(); } catch { } }
+                if (waits % 30 == 0) { try { KillPlayAgainYes(); } catch { } }
                 if (waits % 300 != 0) continue; // poll ~every 5s
                 // Transition purge: must run OUTSIDE the scene gate below
                 // (it fires exactly when leaving battle state).
