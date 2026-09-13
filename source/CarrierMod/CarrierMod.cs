@@ -2320,67 +2320,150 @@ namespace CarrierMod
 
         private static bool DISABLE_REPLAY_BUTTON = true;
 
-        // REPLAY KILL (user request): after a custom carrier battle, the
-        // results-screen replay button reloads the poisoned fleet save and
-        // freezes on plane divisions. Neutralize it once per battle exit:
-        // scan active Buttons, log the inventory (diagnostic), and disable
-        // text matches. Scoped to custom battles with our carriers only.
+        // REPLAY KILL (user request): after a custom carrier battle the game
+        // shows a "Play again?" Yes/No dialog; Yes reloads the poisoned fleet
+        // save and freezes on plane divisions. Decline it for the user: find
+        // the dialog by its PROMPT text (buttons just say Yes/No), disable
+        // everything except the No button. Scoped to custom battles with our
+        // carriers only. Runs 3 passes (dialog may build late).
         private static System.Collections.IEnumerator DisableReplayButtonSoon()
         {
-            yield return new UnityEngine.WaitForSeconds(4f);
-            yield return new UnityEngine.WaitForSeconds(4f);
-            try
+            for (int pass = 0; pass < 3; pass++)
             {
-                if (!DISABLE_REPLAY_BUTTON) yield break;
-                try { if (GameManager.IsCampaign) yield break; } catch { }
-                if (_spawnedCarrierPtrs.Count == 0 && _planeRecs.Count == 0) yield break;
-                var buttons = UnityEngine.Object.FindObjectsOfType<UnityEngine.UI.Button>();
-                if (buttons == null) yield break;
-                int scanned = 0, killed = 0;
-                foreach (var b in buttons)
+                yield return new UnityEngine.WaitForSeconds(pass == 0 ? 6f : 10f);
+                try
                 {
+                    if (!DISABLE_REPLAY_BUTTON) yield break;
+                    try { if (GameManager.IsCampaign) yield break; } catch { }
+                    if (_spawnedCarrierPtrs.Count == 0 && _planeRecs.Count == 0) yield break;
+                    // 1) find the dialog by prompt text
+                    UnityEngine.Transform dlgRoot = null;
+                    string dlgText = "";
                     try
                     {
-                        if (b == null) continue;
-                        var go = b.gameObject;
-                        if (go == null || !go.activeInHierarchy) continue;
-                        string text = "";
-                        try
+                        var tmps = UnityEngine.Object.FindObjectsOfType<Il2CppTMPro.TMP_Text>();
+                        if (tmps != null)
                         {
-                            var tmp = go.GetComponentInChildren<Il2CppTMPro.TMP_Text>();
-                            if (tmp != null) text = tmp.text;
-                        }
-                        catch { }
-                        if (string.IsNullOrEmpty(text))
-                        {
-                            try
+                            foreach (var t in tmps)
                             {
-                                var t = go.GetComponentInChildren<UnityEngine.UI.Text>();
-                                if (t != null) text = t.text;
+                                try
+                                {
+                                    if (t == null || t.gameObject == null || !t.gameObject.activeInHierarchy) continue;
+                                    string tx = t.text ?? "";
+                                    if (tx.ToLowerInvariant().Contains("play again") || tx.ToLowerInvariant().Contains("replay") || tx.ToLowerInvariant().Contains("rematch"))
+                                    {
+                                        dlgRoot = t.gameObject.transform;
+                                        dlgText = tx.Trim();
+                                        break;
+                                    }
+                                }
+                                catch { }
                             }
-                            catch { }
-                        }
-                        string path = go.name;
-                        try
-                        {
-                            var p = go.transform.parent;
-                            int depth = 0;
-                            while (p != null && depth < 6) { path = p.name + "/" + path; p = p.parent; depth++; }
-                        }
-                        catch { }
-                        scanned++;
-                        if (scanned <= 40) Log("[CarrierMod] endUI button: " + path + " text='" + text + "'");
-                        string low = (text ?? "").ToLowerInvariant();
-                        if (low.Contains("play again") || low.Contains("replay") || low.Contains("rematch"))
-                        {
-                            try { b.interactable = false; killed++; Log("[CarrierMod] replay button disabled: " + path); } catch { }
                         }
                     }
                     catch { }
+                    if (dlgRoot == null)
+                    {
+                        try
+                        {
+                            var texts = UnityEngine.Object.FindObjectsOfType<UnityEngine.UI.Text>();
+                            if (texts != null)
+                            {
+                                foreach (var t in texts)
+                                {
+                                    try
+                                    {
+                                        if (t == null || t.gameObject == null || !t.gameObject.activeInHierarchy) continue;
+                                        string tx = t.text ?? "";
+                                        if (tx.ToLowerInvariant().Contains("play again") || tx.ToLowerInvariant().Contains("replay") || tx.ToLowerInvariant().Contains("rematch"))
+                                        {
+                                            dlgRoot = t.gameObject.transform;
+                                            dlgText = tx.Trim();
+                                            break;
+                                        }
+                                    }
+                                    catch { }
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                    if (dlgRoot == null) continue; // no dialog this pass; retry next pass
+                    // ascend to the dialog container (first ancestor holding 2+ buttons)
+                    UnityEngine.Transform root = dlgRoot;
+                    try
+                    {
+                        var p = dlgRoot.parent;
+                        int depth = 0;
+                        while (p != null && depth < 8)
+                        {
+                            int btns = 0;
+                            try
+                            {
+                                var bs = p.gameObject.GetComponentsInChildren<UnityEngine.UI.Button>();
+                                if (bs != null) btns = bs.Length;
+                            }
+                            catch { }
+                            root = p;
+                            if (btns >= 2) break;
+                            p = p.parent;
+                            depth++;
+                        }
+                    }
+                    catch { }
+                    // disable everything except No-like buttons
+                    try
+                    {
+                        var btns = root.gameObject.GetComponentsInChildren<UnityEngine.UI.Button>();
+                        if (btns != null)
+                        {
+                            foreach (var b in btns)
+                            {
+                                try
+                                {
+                                    if (b == null || b.gameObject == null || !b.gameObject.activeInHierarchy) continue;
+                                    string bt = "";
+                                    try
+                                    {
+                                        var tt = b.gameObject.GetComponentInChildren<Il2CppTMPro.TMP_Text>();
+                                        if (tt != null) bt = tt.text ?? "";
+                                    }
+                                    catch { }
+                                    if (string.IsNullOrEmpty(bt))
+                                    {
+                                        try
+                                        {
+                                            var tu = b.gameObject.GetComponentInChildren<UnityEngine.UI.Text>();
+                                            if (tu != null) bt = tu.text ?? "";
+                                        }
+                                        catch { }
+                                    }
+                                    string blo = bt.Trim().ToLowerInvariant();
+                                    bool isNo = blo == "no" || blo.StartsWith("no ") || blo.StartsWith("no\n");
+                                    string bpath = b.gameObject.name;
+                                    try
+                                    {
+                                        var pp = b.gameObject.transform.parent;
+                                        int dd = 0;
+                                        while (pp != null && dd < 4) { bpath = pp.name + "/" + bpath; pp = pp.parent; dd++; }
+                                    }
+                                    catch { }
+                                    Log("[CarrierMod] play-again dialog button: '" + bt.Trim() + "' at " + bpath);
+                                    if (!isNo)
+                                    {
+                                        try { b.interactable = false; Log("[CarrierMod] replay option disabled (saying No for you)."); } catch { }
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
+                    }
+                    catch { }
+                    Log("[CarrierMod] play-again dialog handled: '" + dlgText.Substring(0, System.Math.Min(80, dlgText.Length)) + "'");
+                    yield break; // handled; no further passes needed
                 }
-                Log("[CarrierMod] endUI scan done: " + scanned + " buttons, " + killed + " replay disabled.");
+                catch { }
             }
-            catch { }
         }
 
         private static void DestroyStrayPlanes()
