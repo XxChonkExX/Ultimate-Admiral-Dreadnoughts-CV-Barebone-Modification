@@ -115,7 +115,7 @@ to the default. **Changes require a game restart.**
 | `torpedo_drop_speed` | `135` | Effective in-water speed of a dropped torpedo |
 | `plane_torpedo_boost` | `1.0` | Extra multiplier on plane-dropped torpedoes only |
 | `torpedo_life` | `60` | Torpedo lifetime (s) |
-| `release_distance` | `900` | Drop range from target (m) — historic Swordfish range |
+| `release_distance` | `900` | Drop range from target (m) |
 | `rearm_distance` | `150` | "On deck" distance from the carrier (m) |
 | `rearm_time` | `135` | Deck cycle between sorties (s) |
 | `aa_range` | `2500` | AA engagement envelope (m) |
@@ -134,7 +134,7 @@ The per-hit probability curve (not exposed, in `AaHitChance`) is: 0.3 % beyond 2
 approach (outbound, armed, < 1,500 m).
 
 **Reference balances:** a fully secondary-fitted modern battleship should shred most of a
-raid but still eat fish; a bare gunboat gets away with murder against planes. `AA_HIT_MULT`
+raid but still eat fish; a secondary gunboat gets away with murder against planes. `AA_HIT_MULT`
 and `aa_crit_chance` are the two dials that most change the feel.
 
 ---
