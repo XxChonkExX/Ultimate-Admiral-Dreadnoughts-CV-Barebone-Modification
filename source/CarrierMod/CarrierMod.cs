@@ -1405,7 +1405,19 @@ namespace CarrierMod
         // Battle prep (void method, iterator-safe): arms the plane spawn experiment.
         private static class Patch_PreInitBattle
         {
-            public static void Run() { try { ArmSpawnExperiment(); } catch { } }
+            public static void Run()
+            {
+                try
+                {
+                    // Replay entry: any live planes from the previous battle
+                    // must die BEFORE the fleet save/load reads them. (The
+                    // teardown prefix should have caught them; this is the
+                    // backstop at the exact choke point.)
+                    try { DestroyAllPlanes("replay entry"); } catch { }
+                    ArmSpawnExperiment();
+                }
+                catch { }
+            }
         }
 
         private static class Patch_SkirmishInit
