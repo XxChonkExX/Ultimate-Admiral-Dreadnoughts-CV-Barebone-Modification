@@ -2331,6 +2331,20 @@ namespace CarrierMod
         // Remembers handled dialogs so we never touch them twice (and never
         // spam the log while one sits open).
         private static int _handledDlgId = 0;
+        private static UnityEngine.UI.Button _killedYesBtn = null;
+
+        private static void RestoreReplayYes()
+        {
+            // UAD reuses ONE generic popup prefab (Popup/Generic/...) for
+            // every Yes/No dialog. The play-again kill must be temporary:
+            // once its prompt is gone, hand the shared Yes back so
+            // Exit-to-Menu / Exit-Game dialogs keep working.
+            if (_killedYesBtn == null) return;
+            bool wasOff = false;
+            try { wasOff = !_killedYesBtn.interactable; if (wasOff) _killedYesBtn.interactable = true; } catch { wasOff = false; }
+            try { _killedYesBtn = null; } catch { }
+            if (wasOff) { try { Log("[CarrierMod] Yes button restored for other dialogs."); } catch { } }
+        }
 
         // TMP rich-text markup (<color>, <b>...) lives in .text — strip tags
         // before any comparison, or exact matches never hit styled prompts.
@@ -2357,9 +2371,10 @@ namespace CarrierMod
             bool handled = false;
             try
             {
-                if (!DISABLE_REPLAY_BUTTON) return false;
-                try { if (GameManager.IsCampaign) return false; } catch { }
-                if (_spawnedCarrierPtrs.Count == 0 && _planeRecs.Count == 0) return false;
+                if (!DISABLE_REPLAY_BUTTON) { try { RestoreReplayYes(); } catch { } return false; }
+                // NOTE: the presence guards below also restore — the kill is
+                // only valid while the play-again prompt is on screen (the
+                // Yes button is shared with every other generic dialog).
                 // 1) find the dialog by prompt text. Substring on the STRIPPED
                 // text: title ("Battle Won") and prompt often share one text
                 // block. Bare "replay" stays banned (too broad); the "play
@@ -2415,14 +2430,13 @@ namespace CarrierMod
                     }
                     catch { }
                 }
-                if (dlgRoot == null) return false; // no dialog up right now
-                // already handled this exact dialog? skip silently.
-                try
-                {
-                    int id = dlgRoot.gameObject.GetInstanceID();
-                    if (id != 0 && id == _handledDlgId) { handled = true; return handled; }
-                }
-                catch { }
+                if (dlgRoot == null) { try { RestoreReplayYes(); } catch { } return false; } // no dialog up right now
+                try { if (GameManager.IsCampaign) { RestoreReplayYes(); return false; } } catch { }
+                if (_spawnedCarrierPtrs.Count == 0 && _planeRecs.Count == 0) { try { RestoreReplayYes(); } catch { } return false; }
+                // (No early "already handled" return: the disable is
+                // idempotent, and the shared button must stay tracked in
+                // _killedYesBtn until its prompt is gone. Logs are gated on
+                // fresh-dialog below instead.)
                 // ascend to the dialog container (cap 4 levels so we never
                 // climb into a shared window holding unrelated buttons).
                 UnityEngine.Transform root = dlgRoot;
@@ -2512,7 +2526,9 @@ namespace CarrierMod
                     catch { }
                     return false; // not a Yes/No dialog; touch nothing
                 }
-                try { Log("[CarrierMod] play-again dialog: Yes at " + yesPath + ", No at " + noPath + "."); } catch { }
+                bool freshDlg = true;
+                try { int nid = dlgRoot.gameObject.GetInstanceID(); freshDlg = (nid == 0 || nid != _handledDlgId); if (nid != 0) _handledDlgId = nid; } catch { }
+                if (freshDlg) { try { Log("[CarrierMod] play-again dialog: Yes at " + yesPath + ", No at " + noPath + "."); } catch { } }
                 try
                 {
                     if (yesBtn.interactable)
@@ -2520,11 +2536,11 @@ namespace CarrierMod
                         yesBtn.interactable = false;
                         Log("[CarrierMod] replay option disabled (saying No for you).");
                     }
+                    try { _killedYesBtn = yesBtn; } catch { }
                     handled = true;
-                    try { _handledDlgId = dlgRoot.gameObject.GetInstanceID(); } catch { }
                 }
                 catch { }
-                Log("[CarrierMod] play-again dialog handled: '" + dlgText.Substring(0, System.Math.Min(80, dlgText.Length)) + "'");
+                if (freshDlg) Log("[CarrierMod] play-again dialog handled: '" + dlgText.Substring(0, System.Math.Min(80, dlgText.Length)) + "'");
             }
             catch { }
             return handled;
