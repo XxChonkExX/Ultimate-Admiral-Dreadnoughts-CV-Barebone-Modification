@@ -1409,8 +1409,90 @@ namespace CarrierMod
                 // Setup scene: purge before the fleet snapshot (Reiniting reads
                 // the same registries moments later).
                 try { PurgeTafPlaneDesigns(); } catch { }
+                try { DumpSetupHolders(); } catch { }
                 try { TryInjectVanillaSkirmish(); } catch { }
             }
+        }
+
+        // ONE-SHOT DIAGNOSTIC: dump the real holder structures (types, fields,
+        // collection counts) for both vanilla setup players and TAF's
+        // SkPlayers, so we can see exactly where plane designs live.
+        private static bool _holdersDumped = false;
+        private static void DumpSetupHolders()
+        {
+            if (_holdersDumped) return;
+            _holdersDumped = true;
+            try
+            {
+                Log("[CarrierMod] === SETUP HOLDER DUMP ===");
+                object sk = null;
+                try { sk = GetMember(G.ui, "skirmishSetup"); } catch { }
+                Log("[CarrierMod] G.ui.skirmishSetup type=" + (sk != null ? sk.GetType().FullName : "null"));
+                if (sk != null)
+                {
+                    foreach (var pn in new string[] { "player1", "player2" })
+                    {
+                        try
+                        {
+                            var vp = GetMember(sk, pn);
+                            Log("[CarrierMod] vanilla " + pn + " type=" + (vp != null ? vp.GetType().FullName : "null"));
+                            if (vp == null) continue;
+                            var t = vp.GetType();
+                            foreach (var prop in t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance))
+                            {
+                                try
+                                {
+                                    var v = prop.GetValue(vp, null);
+                                    string desc = v == null ? "null" : v.GetType().FullName;
+                                    try
+                                    {
+                                        var ie = v as Il2CppSystem.Collections.IEnumerable;
+                                        if (ie != null)
+                                        {
+                                            int c = 0;
+                                            var en2 = ie.GetEnumerator();
+                                            string sample = "";
+                                            while (true)
+                                            {
+                                                bool more = false;
+                                                try { more = en2.MoveNext(); } catch { break; }
+                                                if (!more || c >= 30) break;
+                                                try
+                                                {
+                                                    var cur = en2.Current;
+                                                    string cn2 = "?";
+                                                    try
+                                                    {
+                                                        var sh = cur as Ship;
+                                                        if (sh != null) cn2 = (sh.name ?? "?") + "/" + (sh.hull != null && sh.hull.name != null ? sh.hull.name : "?");
+                                                        else
+                                                        {
+                                                            var st2 = cur as Ship.Store;
+                                                            if (st2 != null) cn2 = (st2.vesselName ?? "?") + "/" + (st2.shipType ?? "?");
+                                                            else cn2 = cur != null ? cur.GetType().Name : "null";
+                                                        }
+                                                    }
+                                                    catch { }
+                                                    if (c < 6) sample += "[" + cn2 + "]";
+                                                    c++;
+                                                }
+                                                catch { c++; }
+                                            }
+                                            desc += " count~" + c + " " + sample;
+                                        }
+                                    }
+                                    catch { }
+                                    Log("[CarrierMod]   vanilla." + pn + "." + prop.Name + " = " + desc);
+                                }
+                                catch { }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                Log("[CarrierMod] === END HOLDER DUMP ===");
+            }
+            catch (Exception ex) { Log("[CarrierMod] holder dump error: " + ex.Message); }
         }
 
         // The part-list preview resolves the icon via GetModelNameScale (static,        // returns ModelInfo ValueType). For air-wing parts, force the resolved
