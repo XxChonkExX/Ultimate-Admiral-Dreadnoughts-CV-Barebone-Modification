@@ -2360,10 +2360,10 @@ namespace CarrierMod
                 if (!DISABLE_REPLAY_BUTTON) return false;
                 try { if (GameManager.IsCampaign) return false; } catch { }
                 if (_spawnedCarrierPtrs.Count == 0 && _planeRecs.Count == 0) return false;
-                // 1) find the dialog by EXACT prompt text. Bare "replay" as a
-                // substring is banned: it matches unrelated UI (battle replay
-                // controls, tooltips) and previously greyed out innocent
-                // Yes/No dialogs like exit-to-menu.
+                // 1) find the dialog by prompt text. Substring on the STRIPPED
+                // text: title ("Battle Won") and prompt often share one text
+                // block. Bare "replay" stays banned (too broad); the "play
+                // again" phrase plus the Yes+No completeness check below is safe.
                 UnityEngine.Transform dlgRoot = null;
                 string dlgText = "";
                 try
@@ -2377,7 +2377,7 @@ namespace CarrierMod
                             {
                                 if (t == null || t.gameObject == null || !t.gameObject.activeInHierarchy) continue;
                                 string tx = StripTags(t.text ?? "").Trim().ToLowerInvariant();
-                                if (tx == "play again?" || tx == "play again" || tx.Contains("rematch"))
+                                if (tx.Contains("play again") || tx.Contains("rematch"))
                                 {
                                     dlgRoot = t.gameObject.transform;
                                     dlgText = tx.Trim();
@@ -2402,7 +2402,7 @@ namespace CarrierMod
                                 {
                                     if (t == null || t.gameObject == null || !t.gameObject.activeInHierarchy) continue;
                                     string tx = StripTags(t.text ?? "").Trim().ToLowerInvariant();
-                                    if (tx == "play again?" || tx == "play again" || tx.Contains("rematch"))
+                                    if (tx.Contains("play again") || tx.Contains("rematch"))
                                     {
                                         dlgRoot = t.gameObject.transform;
                                         dlgText = tx.Trim();
@@ -2451,6 +2451,7 @@ namespace CarrierMod
                 UnityEngine.UI.Button yesBtn = null;
                 UnityEngine.UI.Button noBtn = null;
                 string yesPath = "", noPath = "";
+                string btnSeen = "";
                 try
                 {
                     var btns = root.gameObject.GetComponentsInChildren<UnityEngine.UI.Button>();
@@ -2488,13 +2489,29 @@ namespace CarrierMod
                                 catch { }
                                 if (blo == "yes" && yesBtn == null) { yesBtn = b; yesPath = bpath; }
                                 else if (blo == "no" && noBtn == null) { noBtn = b; noPath = bpath; }
+                                try { if (btnSeen.Length < 300) btnSeen += "[" + b.gameObject.name + "='" + bt.Trim() + "']"; } catch { }
                             }
                             catch { }
                         }
                     }
                 }
                 catch { }
-                if (yesBtn == null || noBtn == null) return false; // not a Yes/No dialog; touch nothing
+                if (yesBtn == null || noBtn == null)
+                {
+                    // Diagnostic: prompt matched but buttons incomplete. Log once
+                    // per dialog so the next round knows the real structure.
+                    try
+                    {
+                        int id = dlgRoot.gameObject.GetInstanceID();
+                        if (id != _handledDlgId)
+                        {
+                            _handledDlgId = id;
+                            Log("[CarrierMod] play-again prompt seen but Yes/No incomplete (yes=" + (yesBtn != null) + " no=" + (noBtn != null) + "): '" + dlgText.Substring(0, System.Math.Min(80, dlgText.Length)) + "' btns=" + btnSeen);
+                        }
+                    }
+                    catch { }
+                    return false; // not a Yes/No dialog; touch nothing
+                }
                 try { Log("[CarrierMod] play-again dialog: Yes at " + yesPath + ", No at " + noPath + "."); } catch { }
                 try
                 {
