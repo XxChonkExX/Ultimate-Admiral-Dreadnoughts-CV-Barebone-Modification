@@ -240,6 +240,34 @@ namespace CarrierMod
                     // does NOT call PreInitCustomBattle — without this hook the
                     // TAF purge + battle reset never run on replays.
                     PatchOne(hm, "BattleManager.InitCustomBattleFromSave", typeof(BattleManager), "InitCustomBattleFromSave", typeof(Patch_PreInitBattle), null);
+                    // REINIT GATE: TAF rebuilds SkPlayer designs as real ships
+                    // here; purge first so planes never reach the builder.
+                    try
+                    {
+                        var tafSetupT = SafeFindType("TweaksAndFixes", "TweaksAndFixes.UiM+SkirmishSetupMod");
+                        var reinitM = tafSetupT != null ? HarmonyLib.AccessTools.Method(tafSetupT, "InitializePlayerMadeShips") : null;
+                        var reinitPre = HarmonyLib.AccessTools.Method(typeof(Patch_TafReinit), "Run");
+                        if (reinitM != null && reinitPre != null)
+                        {
+                            hm.Patch(reinitM, new HarmonyLib.HarmonyMethod(reinitPre));
+                            Log("[CarrierMod] patch OK: TAF InitializePlayerMadeShips (reinit gate)");
+                        }
+                        else Log("[CarrierMod] patch SKIP: TAF InitializePlayerMadeShips not found");
+                    }
+                    catch (Exception ex) { Log("[CarrierMod] reinit gate failed: " + ex.Message); }
+                    // REBUILD GATE: skip plane designs at the per-ship rebuild.
+                    try
+                    {
+                        var rbM = HarmonyLib.AccessTools.Method(typeof(BattleManager), "RebuildShipInSkirmish");
+                        var rbPre = HarmonyLib.AccessTools.Method(typeof(Patch_RebuildShip), "Run");
+                        if (rbM != null && rbPre != null)
+                        {
+                            hm.Patch(rbM, new HarmonyLib.HarmonyMethod(rbPre));
+                            Log("[CarrierMod] patch OK: BattleManager.RebuildShipInSkirmish (plane skip)");
+                        }
+                        else Log("[CarrierMod] patch SKIP: RebuildShipInSkirmish not found");
+                    }
+                    catch (Exception ex) { Log("[CarrierMod] rebuild gate failed: " + ex.Message); }
                     // Wing-only strike boost: Torpedo.Create(Part from, ...) — the
                     // Part arg identifies the firing tube, so the boost is
                     // per-tube and cannot leak to ship torpedoes. Param name
@@ -2011,6 +2039,58 @@ namespace CarrierMod
                 catch { }
             }
             catch (Exception ex) { Log("[CarrierMod] PurgeTafPlaneDesigns error: " + ex.Message); }
+        }
+
+        // ===== TAF REINIT GATE =====
+        // TAF's UiM.SkirmishSetupMod.InitializePlayerMadeShips() enumerates
+        // shipDesigns and rebuilds missing instances as REAL ships — plane
+        // designs die there (BeamMin/CWeight NREs) and then kill PrepareBattle.
+        // Prefix: purge first (order-independent), so the enumeration never
+        // sees a plane regardless of who added it or when.
+        private static class Patch_TafReinit
+        {
+            public static void Run()
+            {
+                try { PurgeTafPlaneDesigns(); } catch { }
+            }
+        }
+
+        // Belt: per-ship rebuild gate — even if a plane design somehow
+        // survives into the rebuild call, skip it (vanilla for the rest).
+        private static class Patch_RebuildShip
+        {
+            public static bool Run(object skirmish, Ship rebuildShip)
+            {
+                try
+                {
+                    if (rebuildShip != null)
+                    {
+                        bool isPlane = false;
+                        try
+                        {
+                            string h = rebuildShip.hull != null ? rebuildShip.hull.name : null;
+                            isPlane = h == "plane_strike_1";
+                        }
+                        catch { }
+                        if (!isPlane)
+                        {
+                            try
+                            {
+                                string nm = rebuildShip.name;
+                                isPlane = nm != null && nm.StartsWith("PLANE ");
+                            }
+                            catch { }
+                        }
+                        if (isPlane)
+                        {
+                            Log("[CarrierMod] RebuildShipInSkirmish SKIPPED plane design (replay-safe).");
+                            return false;
+                        }
+                    }
+                }
+                catch { }
+                return true;
+            }
         }
 
         private static System.Collections.IEnumerator StartupPurgeWhenReady()
