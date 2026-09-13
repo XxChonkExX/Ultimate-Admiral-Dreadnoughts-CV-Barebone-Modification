@@ -2401,6 +2401,13 @@ namespace CarrierMod
                     try { PurgeTafPlaneDesigns(); } catch { }
                 }
                 if (waits % 300 != 0) continue; // poll ~every 5s
+                // SCENE GATE (user diagnosis confirmed): the watcher must only
+                // fire in live battles. Designer preview ships, cached refit
+                // hulls, and teardown wrecks all look "deployed" — spawning
+                // off them injects planes into the designer/setup flows.
+                bool inBattleNow = false;
+                try { inBattleNow = GameManager.IsBattle; } catch { }
+                if (!inBattleNow) continue;
                 // Transition purge: the fleet snapshot for the NEXT battle is
                 // written when entering the constructor — purge the moment we
                 // leave battle state so the snapshot can never include planes.
@@ -2475,6 +2482,15 @@ namespace CarrierMod
                 if (!loading) break;
                 yield return new UnityEngine.WaitForSeconds(0.5f);
             }
+            // SCENE RE-CHECK: the 45s settle can span a scene change (battle
+            // end, quit to setup). Never spawn outside a live battle.
+            try
+            {
+                bool stillBattle = false;
+                try { stillBattle = GameManager.IsBattle; } catch { }
+                if (!stillBattle) { Log("[CarrierMod] left battle during settle; aborting squadron for " + carrierName + "."); yield break; }
+            }
+            catch { }
             try { if (carrier == null || carrier.isSinking || carrier.isDead) { Log("[CarrierMod] carrier lost during settle; skipping squadron."); yield break; } } catch { }
             Log("[CarrierMod] battle settled; spawning squadron for " + carrierName + " now.");
             object player = null;
