@@ -435,3 +435,13 @@ torpedo_drop_speed 90 -> 135 (+50%); tube calibers 2.5/3.0/3.5 ->
 2.8/3.35/3.9 for ~+25% damage (quadratic warhead assumption; speed
 untouched - explicit base speeds + boost patch). Verify: hits ~3000 ->
 ~3750 on same target class.
+
+REPLAY BUG: RESOLVED (21:27 session). Three consecutive battles incl.
+replays, zero plane entries in any PrepareBattle spawn list, zero NREs.
+Decisive evidence: purge caught 2 plane AMOUNT entries at boot
+('amounts 1/13' -> removed) - the nested-dict + vanilla-layer fix was the
+layer that mattered; TAF's prep regenerates designs from those counts, so
+removing the type key starves the whole chain. Downstream layers (retire
+everywhere, save-scrub, teardown, rebuild skip) stand as defense in depth.
+Remaining cosmetic: AirWingTorpedoTubes localization errors in designer
+(harmless, pre-existing since v1.2).
