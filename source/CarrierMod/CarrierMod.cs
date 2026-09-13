@@ -2328,6 +2328,10 @@ namespace CarrierMod
         // everything except the No button. Scoped to custom battles with our
         // carriers only. Runs 3 passes (dialog may build late).
         // Shared dialog killer: returns true if it handled a dialog.
+        // Remembers handled dialogs so we never touch them twice (and never
+        // spam the log while one sits open).
+        private static int _handledDlgId = 0;
+
         private static bool KillPlayAgainYes()
         {
             bool handled = false;
@@ -2336,21 +2340,49 @@ namespace CarrierMod
                 if (!DISABLE_REPLAY_BUTTON) return false;
                 try { if (GameManager.IsCampaign) return false; } catch { }
                 if (_spawnedCarrierPtrs.Count == 0 && _planeRecs.Count == 0) return false;
-                    // 1) find the dialog by prompt text
-                    UnityEngine.Transform dlgRoot = null;
-                    string dlgText = "";
+                // 1) find the dialog by EXACT prompt text. Bare "replay" as a
+                // substring is banned: it matches unrelated UI (battle replay
+                // controls, tooltips) and previously greyed out innocent
+                // Yes/No dialogs like exit-to-menu.
+                UnityEngine.Transform dlgRoot = null;
+                string dlgText = "";
+                try
+                {
+                    var tmps = UnityEngine.Object.FindObjectsOfType<Il2CppTMPro.TMP_Text>();
+                    if (tmps != null)
+                    {
+                        foreach (var t in tmps)
+                        {
+                            try
+                            {
+                                if (t == null || t.gameObject == null || !t.gameObject.activeInHierarchy) continue;
+                                string tx = (t.text ?? "").Trim().ToLowerInvariant();
+                                if (tx == "play again?" || tx == "play again" || tx.Contains("rematch"))
+                                {
+                                    dlgRoot = t.gameObject.transform;
+                                    dlgText = tx.Trim();
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                }
+                catch { }
+                if (dlgRoot == null)
+                {
                     try
                     {
-                        var tmps = UnityEngine.Object.FindObjectsOfType<Il2CppTMPro.TMP_Text>();
-                        if (tmps != null)
+                        var texts = UnityEngine.Object.FindObjectsOfType<UnityEngine.UI.Text>();
+                        if (texts != null)
                         {
-                            foreach (var t in tmps)
+                            foreach (var t in texts)
                             {
                                 try
                                 {
                                     if (t == null || t.gameObject == null || !t.gameObject.activeInHierarchy) continue;
-                                    string tx = t.text ?? "";
-                                    if (tx.ToLowerInvariant().Contains("play again") || tx.ToLowerInvariant().Contains("replay") || tx.ToLowerInvariant().Contains("rematch"))
+                                    string tx = (t.text ?? "").Trim().ToLowerInvariant();
+                                    if (tx == "play again?" || tx == "play again" || tx.Contains("rematch"))
                                     {
                                         dlgRoot = t.gameObject.transform;
                                         dlgText = tx.Trim();
@@ -2362,105 +2394,100 @@ namespace CarrierMod
                         }
                     }
                     catch { }
-                    if (dlgRoot == null)
+                }
+                if (dlgRoot == null) return false; // no dialog up right now
+                // already handled this exact dialog? skip silently.
+                try
+                {
+                    int id = dlgRoot.gameObject.GetInstanceID();
+                    if (id != 0 && id == _handledDlgId) { handled = true; return handled; }
+                }
+                catch { }
+                // ascend to the dialog container (cap 4 levels so we never
+                // climb into a shared window holding unrelated buttons).
+                UnityEngine.Transform root = dlgRoot;
+                try
+                {
+                    var p = dlgRoot.parent;
+                    int depth = 0;
+                    while (p != null && depth < 4)
                     {
+                        int btns = 0;
                         try
                         {
-                            var texts = UnityEngine.Object.FindObjectsOfType<UnityEngine.UI.Text>();
-                            if (texts != null)
-                            {
-                                foreach (var t in texts)
-                                {
-                                    try
-                                    {
-                                        if (t == null || t.gameObject == null || !t.gameObject.activeInHierarchy) continue;
-                                        string tx = t.text ?? "";
-                                        if (tx.ToLowerInvariant().Contains("play again") || tx.ToLowerInvariant().Contains("replay") || tx.ToLowerInvariant().Contains("rematch"))
-                                        {
-                                            dlgRoot = t.gameObject.transform;
-                                            dlgText = tx.Trim();
-                                            break;
-                                        }
-                                    }
-                                    catch { }
-                                }
-                            }
+                            var bs = p.gameObject.GetComponentsInChildren<UnityEngine.UI.Button>();
+                            if (bs != null) btns = bs.Length;
                         }
                         catch { }
+                        root = p;
+                        if (btns >= 2) break;
+                        p = p.parent;
+                        depth++;
                     }
-                    if (dlgRoot == null) return false; // no dialog up right now
-                    // ascend to the dialog container (first ancestor holding 2+ buttons)
-                    UnityEngine.Transform root = dlgRoot;
-                    try
+                }
+                catch { }
+                // collect buttons with exact Yes/No labels; require BOTH to
+                // be present, else this is not the dialog — touch nothing.
+                UnityEngine.UI.Button yesBtn = null;
+                UnityEngine.UI.Button noBtn = null;
+                string yesPath = "", noPath = "";
+                try
+                {
+                    var btns = root.gameObject.GetComponentsInChildren<UnityEngine.UI.Button>();
+                    if (btns != null)
                     {
-                        var p = dlgRoot.parent;
-                        int depth = 0;
-                        while (p != null && depth < 8)
+                        foreach (var b in btns)
                         {
-                            int btns = 0;
                             try
                             {
-                                var bs = p.gameObject.GetComponentsInChildren<UnityEngine.UI.Button>();
-                                if (bs != null) btns = bs.Length;
-                            }
-                            catch { }
-                            root = p;
-                            if (btns >= 2) break;
-                            p = p.parent;
-                            depth++;
-                        }
-                    }
-                    catch { }
-                    // disable everything except No-like buttons
-                    try
-                    {
-                        var btns = root.gameObject.GetComponentsInChildren<UnityEngine.UI.Button>();
-                        if (btns != null)
-                        {
-                            foreach (var b in btns)
-                            {
+                                if (b == null || b.gameObject == null || !b.gameObject.activeInHierarchy) continue;
+                                string bt = "";
                                 try
                                 {
-                                    if (b == null || b.gameObject == null || !b.gameObject.activeInHierarchy) continue;
-                                    string bt = "";
-                                    try
-                                    {
-                                        var tt = b.gameObject.GetComponentInChildren<Il2CppTMPro.TMP_Text>();
-                                        if (tt != null) bt = tt.text ?? "";
-                                    }
-                                    catch { }
-                                    if (string.IsNullOrEmpty(bt))
-                                    {
-                                        try
-                                        {
-                                            var tu = b.gameObject.GetComponentInChildren<UnityEngine.UI.Text>();
-                                            if (tu != null) bt = tu.text ?? "";
-                                        }
-                                        catch { }
-                                    }
-                                    string blo = bt.Trim().ToLowerInvariant();
-                                    bool isNo = blo == "no" || blo.StartsWith("no ") || blo.StartsWith("no\n");
-                                    string bpath = b.gameObject.name;
-                                    try
-                                    {
-                                        var pp = b.gameObject.transform.parent;
-                                        int dd = 0;
-                                        while (pp != null && dd < 4) { bpath = pp.name + "/" + bpath; pp = pp.parent; dd++; }
-                                    }
-                                    catch { }
-                                    Log("[CarrierMod] play-again dialog button: '" + bt.Trim() + "' at " + bpath);
-                                    if (!isNo)
-                                    {
-                                        try { b.interactable = false; Log("[CarrierMod] replay option disabled (saying No for you)."); } catch { }
-                                    }
+                                    var tt = b.gameObject.GetComponentInChildren<Il2CppTMPro.TMP_Text>();
+                                    if (tt != null) bt = tt.text ?? "";
                                 }
                                 catch { }
+                                if (string.IsNullOrEmpty(bt))
+                                {
+                                    try
+                                    {
+                                        var tu = b.gameObject.GetComponentInChildren<UnityEngine.UI.Text>();
+                                        if (tu != null) bt = tu.text ?? "";
+                                    }
+                                    catch { }
+                                }
+                                string blo = bt.Trim().ToLowerInvariant();
+                                string bpath = b.gameObject.name;
+                                try
+                                {
+                                    var pp = b.gameObject.transform.parent;
+                                    int dd = 0;
+                                    while (pp != null && dd < 4) { bpath = pp.name + "/" + bpath; pp = pp.parent; dd++; }
+                                }
+                                catch { }
+                                if (blo == "yes" && yesBtn == null) { yesBtn = b; yesPath = bpath; }
+                                else if (blo == "no" && noBtn == null) { noBtn = b; noPath = bpath; }
                             }
+                            catch { }
                         }
                     }
-                    catch { }
-                    Log("[CarrierMod] play-again dialog handled: '" + dlgText.Substring(0, System.Math.Min(80, dlgText.Length)) + "'");
+                }
+                catch { }
+                if (yesBtn == null || noBtn == null) return false; // not a Yes/No dialog; touch nothing
+                try { Log("[CarrierMod] play-again dialog: Yes at " + yesPath + ", No at " + noPath + "."); } catch { }
+                try
+                {
+                    if (yesBtn.interactable)
+                    {
+                        yesBtn.interactable = false;
+                        Log("[CarrierMod] replay option disabled (saying No for you).");
+                    }
                     handled = true;
+                    try { _handledDlgId = dlgRoot.gameObject.GetInstanceID(); } catch { }
+                }
+                catch { }
+                Log("[CarrierMod] play-again dialog handled: '" + dlgText.Substring(0, System.Math.Min(80, dlgText.Length)) + "'");
             }
             catch { }
             return handled;
