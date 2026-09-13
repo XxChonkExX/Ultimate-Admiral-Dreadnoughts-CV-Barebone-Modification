@@ -2461,8 +2461,6 @@ namespace CarrierMod
                     catch { }
                     Log("[CarrierMod] play-again dialog handled: '" + dlgText.Substring(0, System.Math.Min(80, dlgText.Length)) + "'");
                     handled = true;
-                }
-                catch { }
             }
             catch { }
             return handled;
