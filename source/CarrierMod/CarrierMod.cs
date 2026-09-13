@@ -316,6 +316,7 @@ namespace CarrierMod
                     PatchOne(hm, "Ship.GetMaxRangeWhitStatEffectInKm", typeof(Ship), "GetMaxRangeWhitStatEffectInKm", typeof(Patch_PlaneMaxRange), null);
                     PatchOne(hm, "Ship.GetMinRangeWhitStatEffectInKm", typeof(Ship), "GetMinRangeWhitStatEffectInKm", typeof(Patch_PlaneMinRange), null);
                     Log("[CarrierMod] harmony patches applied (see per-patch lines).");
+                    Log("[CarrierMod] replay kill armed (disable_replay_button=" + DISABLE_REPLAY_BUTTON + ").");
                 }
                 catch (Exception hex)
                 {
@@ -2326,16 +2327,15 @@ namespace CarrierMod
         // the dialog by its PROMPT text (buttons just say Yes/No), disable
         // everything except the No button. Scoped to custom battles with our
         // carriers only. Runs 3 passes (dialog may build late).
-        private static System.Collections.IEnumerator DisableReplayButtonSoon()
+        // Shared dialog killer: returns true if it handled a dialog.
+        private static bool KillPlayAgainYes()
         {
-            for (int pass = 0; pass < 3; pass++)
+            bool handled = false;
+            try
             {
-                yield return new UnityEngine.WaitForSeconds(pass == 0 ? 6f : 10f);
-                try
-                {
-                    if (!DISABLE_REPLAY_BUTTON) yield break;
-                    try { if (GameManager.IsCampaign) yield break; } catch { }
-                    if (_spawnedCarrierPtrs.Count == 0 && _planeRecs.Count == 0) yield break;
+                if (!DISABLE_REPLAY_BUTTON) return false;
+                try { if (GameManager.IsCampaign) return false; } catch { }
+                if (_spawnedCarrierPtrs.Count == 0 && _planeRecs.Count == 0) return false;
                     // 1) find the dialog by prompt text
                     UnityEngine.Transform dlgRoot = null;
                     string dlgText = "";
@@ -2388,7 +2388,7 @@ namespace CarrierMod
                         }
                         catch { }
                     }
-                    if (dlgRoot == null) continue; // no dialog this pass; retry next pass
+                    if (dlgRoot == null) return false; // no dialog up right now
                     // ascend to the dialog container (first ancestor holding 2+ buttons)
                     UnityEngine.Transform root = dlgRoot;
                     try
@@ -2460,9 +2460,20 @@ namespace CarrierMod
                     }
                     catch { }
                     Log("[CarrierMod] play-again dialog handled: '" + dlgText.Substring(0, System.Math.Min(80, dlgText.Length)) + "'");
-                    yield break; // handled; no further passes needed
+                    handled = true;
                 }
                 catch { }
+            }
+            catch { }
+            return handled;
+        }
+
+        private static System.Collections.IEnumerator DisableReplayButtonSoon()
+        {
+            for (int pass = 0; pass < 3; pass++)
+            {
+                yield return new UnityEngine.WaitForSeconds(pass == 0 ? 6f : 10f);
+                try { if (KillPlayAgainYes()) yield break; } catch { }
             }
         }
 
@@ -2586,20 +2597,21 @@ namespace CarrierMod
                     purgeWaits = 0;
                     try { PurgeTafPlaneDesigns(); } catch { }
                 }
+                // Fast dialog-kill tick (~1s): the Play-again dialog appears
+                // while the battle is still technically live, so battle-exit
+                // triggers fire too late. Runs whenever carriers spawned.
+                if (waits % 60 == 0) { try { KillPlayAgainYes(); } catch { } }
+                // Fast dialog-kill tick (~1s): the Play-again dialog appears
+                // while the battle is still technically live, so exit-based
+                // triggers fire too late. Gate is inside KillPlayAgainYes.
+                if (waits % 60 == 0) { try { KillPlayAgainYes(); } catch { } }
                 if (waits % 300 != 0) continue; // poll ~every 5s
-                // SCENE GATE (user diagnosis confirmed): the watcher must only
-                // fire in live battles. Designer preview ships, cached refit
-                // hulls, and teardown wrecks all look "deployed" — spawning
-                // off them injects planes into the designer/setup flows.
-                bool inBattleNow = false;
-                try { inBattleNow = GameManager.IsBattle; } catch { }
-                if (!inBattleNow) continue;
-                // Transition purge: the fleet snapshot for the NEXT battle is
-                // written when entering the constructor — purge the moment we
-                // leave battle state so the snapshot can never include planes.
+                // Transition purge: must run OUTSIDE the scene gate below
+                // (it fires exactly when leaving battle state).
                 try
                 {
-                    bool inBattle = GameManager.IsBattle;
+                    bool inBattle = false;
+                    try { inBattle = GameManager.IsBattle; } catch { }
                     if (wasBattle && !inBattle)
                     {
                         Log("[CarrierMod] left battle; purging plane designs before setup snapshot.");
@@ -2609,6 +2621,13 @@ namespace CarrierMod
                     wasBattle = inBattle;
                 }
                 catch { }
+                // SCENE GATE (user diagnosis confirmed): the watcher must only
+                // fire in live battles. Designer preview ships, cached refit
+                // hulls, and teardown wrecks all look "deployed" — spawning
+                // off them injects planes into the designer/setup flows.
+                bool inBattleNow = false;
+                try { inBattleNow = GameManager.IsBattle; } catch { }
+                if (!inBattleNow) continue;
                 try
                 {
                     var ships = UnityEngine.Object.FindObjectsOfType<Ship>();
