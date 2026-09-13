@@ -2210,6 +2210,48 @@ namespace CarrierMod
             PurgeTafPlaneDesigns();
         }
 
+        // The battle scene is REUSED across replays ("Skipping config: new
+        // Battle == current Battle") — battle #1's plane objects are still
+        // physically present when battle #2 loads, and every loader sweep
+        // (GetAllShips, design saves, PrepareBattle) trips over them. No
+        // registry purge can fix live objects: destroy strays at arm. Planes
+        // registered as alive in the CURRENT battle are spared.
+        private static void DestroyStrayPlanes()
+        {
+            try
+            {
+                var live = new System.Collections.Generic.HashSet<long>();
+                try
+                {
+                    foreach (var r in _planeRecs)
+                    {
+                        try { if (r.alive && r.ship != null) live.Add((long)r.ship.Pointer); } catch { }
+                    }
+                }
+                catch { }
+                int killed = 0;
+                var ships = UnityEngine.Object.FindObjectsOfType<Ship>();
+                if (ships == null) return;
+                foreach (var s in ships)
+                {
+                    try
+                    {
+                        if (s == null) continue;
+                        string h = null;
+                        try { h = s.hull != null ? s.hull.name : null; } catch { }
+                        if (h != "plane_strike_1") continue;
+                        long ptr = 0;
+                        try { ptr = (long)s.Pointer; } catch { }
+                        if (live.Contains(ptr)) continue;
+                        try { UnityEngine.Object.Destroy(s.gameObject); killed++; } catch { }
+                    }
+                    catch { }
+                }
+                if (killed > 0) Log("[CarrierMod] destroyed " + killed + " stray planes from previous battle.");
+            }
+            catch { }
+        }
+
         private static void ArmSpawnExperiment()
         {
             try
@@ -2240,6 +2282,7 @@ namespace CarrierMod
                 _wasArmed = true;
                 _lastArm = now;
                 PurgeTafPlaneDesigns();
+                try { DestroyStrayPlanes(); } catch { }
         LogVerbose("[CarrierMod] PreInitCustomBattle: spawn experiment armed; starting watcher.");
                 EnsureSpawnWatcher();
             }
