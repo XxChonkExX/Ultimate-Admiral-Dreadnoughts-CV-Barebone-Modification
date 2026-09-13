@@ -17,7 +17,8 @@ extend, and art-up.
 - **3 carrier hulls** (Langley / Yorktown / Essex-CA platforms) across the tech tree, plus a
   registered `cv` ship type available to the player *and* the AI in skirmish & campaign
 - **Air wing torpedo tubes** — Mk1/Mk2/Mk3 (`torpedo_x6/x7/x8`) deck mounts with per-mark
-  range, damage, and reload ladders; 1 plane per tube
+  range, damage, and reload ladders; warhead calibers 3.25 / 3.89 / 4.53
+  (full ship-torpedo strength, +35 % damage); 1 plane per tube
 - **Visual strike planes** — each wing tube spawns a real, visible miniature ship (one per
   mark, any nation) that hunts, drops with intercept lead, returns, and rearms on deck
 - **Squadron waves** — planes launch by mark in deck-launch cadence (one every few seconds),
@@ -26,12 +27,16 @@ extend, and art-up.
 - **Intercept lead** — drops solve time-of-flight against target velocity; no more stern misses
 - **Secondaries-as-AA** — enemy ships' secondary/casemate batteries roll real probability
   against your planes (range curve × final-approach vulnerability). No secondaries in your
-  design = no AA cover. Planes have 2 HP; kills are permanent for the battle
+  design = no AA cover. Planes have 3 HP; kills are permanent for the battle
 - **Multi-carrier** — every deployed CV on *either* side runs its own air wing
 - **Campaign support** — the mod auto-saves its plane design as a shared design and reloads
   it in campaign battles (where the game cannot generate designs)
 - **Enemy wing-tube gate** — carriers can't "fire" their wing tubes as guns; planes are the
   only delivery system
+- **Play-again guard** — the end-of-battle "Play again?" replay path cannot reload a
+  battle whose setup snapshot contains plane designs (the battle loader freezes), so
+  the mod disables the **Yes** button on that dialog only — answer **No** and start a
+  fresh battle instead (see **Replay / "Play again?"** below for why this is safe)
 - **Config file** — every important number is a knob in `CarrierModConfig.csv`
 
 ---
@@ -88,7 +93,7 @@ battle nation).
    secondaries you want (they are your AA!) and a small main battery.
 2. Deploy into battle. After the battle fully settles (~45 s), your carrier launches its
    air wing in mark-waves: `wave 0 (torpedo_x8): 2 planes launching...`
-3. Planes hunt the nearest live enemy, drop one torpedo each inside ~1,250 m with lead
+3. Planes hunt the nearest live enemy, drop one torpedo each inside ~900 m with lead
    computed against the target's movement, RTB, rearm on deck (~135 s), and go out again.
 4. Enemy secondaries will engage your planes on the way in — hardest right at the drop.
    Kills are permanent: your deck strength shrinks through the battle.
@@ -122,6 +127,7 @@ to the default. **Changes require a game restart.**
 | `wave_gap` | `30` | Seconds between squadron waves |
 | `launch_gap` | `3` | Deck-launch cadence inside a wave (s) |
 | `wave_time_limit` | `600` | Max time a carrier keeps planning new waves (s) |
+| `disable_replay_button` | `true` | Disable Yes on the end-of-battle "Play again?" dialog (see below) |
 
 The per-hit probability curve (not exposed, in `AaHitChance`) is: 0.3 % beyond 2,500 m →
 0.5–3 % at 2,500–1,000 m → 3–8 % at 1,000–300 m → 10 % inside 300 m, ×3 during final
@@ -130,6 +136,31 @@ approach (outbound, armed, < 1,500 m).
 **Reference balances:** a fully secondary-fitted modern battleship should shred most of a
 raid but still eat fish; a bare gunboat gets away with murder against planes. `AA_HIT_MULT`
 and `aa_crit_chance` are the two dials that most change the feel.
+
+---
+
+## Replay / "Play again?" — read this
+
+**Always answer No.** After a battle with carriers in it, clicking **Yes** on the
+"Battle Won — Play again?" dialog reloads the battle from a setup snapshot that still
+references plane designs, and the game's battle loader freezes on them (black/loading
+screen, never recovers). This is a game-loader limitation, not something tuning can fix.
+
+To keep you out of that trap, the mod (default `disable_replay_button=true`):
+
+1. Watches for the end-of-battle dialog and disables **only its Yes button** — No stays
+   live, so you exit cleanly and start a fresh battle from the menu.
+2. Touches **nothing else**: the Yes/No completeness check plus prompt-text matching
+   mean every other dialog (Exit to Main Menu, Exit Game, …) is recognized as *not* the
+   replay dialog and left alone.
+3. Restores the button immediately: the game reuses **one generic popup prefab** for all
+   Yes/No dialogs, so the kill is only held while the "Play again?" prompt is actually on
+   screen — the moment it's gone, the shared Yes is handed back, and later dialogs work
+   normally.
+
+Set `disable_replay_button,false` to get the vanilla behavior back (not recommended —
+you *will* freeze if you then replay a carrier battle). Log lines to look for:
+`replay option disabled (saying No for you)` and `Yes button restored for other dialogs`.
 
 ---
 
@@ -169,6 +200,8 @@ Full development log (every dead end and fix) is in [`docs/DESIGN.md`](docs/DESI
 - Targeting ignores the game's spotting/fog rules (planes effectively have perfect recon).
 - One shared plane design per nation (minted from skirmish); per-nation custom planes are
   a future idea.
+- **No battle replays with carriers**: always answer No on "Play again?" and start a
+  fresh battle (the mod disables Yes for you by default — see above).
 - Developed/tested against UAD **1.7.0.0** + **TAF 3.21.1** only.
 
 ---
@@ -183,6 +216,9 @@ Full development log (every dead end and fix) is in [`docs/DESIGN.md`](docs/DESI
 - **Campaign: `NO plane design available`** — run one skirmish battle with a carrier to
   mint the shared design (see Installation note).
 - **`PlaneAI: no friendly carrier left; ditching.`** — working as intended.
+- **Freeze on second battle / replay** — you clicked Yes on "Play again?" (or the guard
+  is off). Kill the game, relaunch, and always answer No; keep
+  `disable_replay_button,true` so Yes stays unavailable on that dialog.
 
 ---
 

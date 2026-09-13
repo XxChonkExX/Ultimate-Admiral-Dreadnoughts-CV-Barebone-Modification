@@ -445,3 +445,8 @@ removing the type key starves the whole chain. Downstream layers (retire
 everywhere, save-scrub, teardown, rebuild skip) stand as defense in depth.
 Remaining cosmetic: AirWingTorpedoTubes localization errors in designer
 (harmless, pre-existing since v1.2).
+
+DAMAGE BUMP (+35 pct, user request): wing tube calibers 2.8/3.35/3.9 -> 3.25/3.89/4.53 (x sqrt(1.35), quadratic warhead assumption holds from the +25 pct round). parts_override.csv only, no code change. Verify: hits ~3750 -> ~5000 on same target class.
+
+REPLAY KILL SAGA, FINAL: exact-match missed (title+prompt share one text block) -> substring play-again + rich-text strip + 0.5s tick worked, but ALSO killed Exit-to-Menu/Exit-Game Yes. Log gave the cause: Yes lives at Popup/Generic/Window/Buttons/Yes - ONE shared generic popup prefab for every Yes/No dialog, so a permanent disable poisoned all later dialogs. Fix: kill held only while the play-again prompt is on screen (tracked Button ref), RestoreReplayYes() re-enables the moment the prompt is gone; guards restore-on-fail; per-dialog logs gated on fresh instance id (disable itself idempotent, no early return). User-verified: replay Yes dead, exit dialogs live.
+README: Play Again section + disable_replay_button row + replay limitation/troubleshooting entries; stale HP (2->3) and release (1250->900m) corrected; damage numbers updated.
