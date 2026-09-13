@@ -107,15 +107,15 @@ to the default. **Changes require a game restart.**
 | `mk1_plane_speed` | `90` | Mk1 flight speed (map units/s) |
 | `mk2_plane_speed` | `110` | Mk2 flight speed |
 | `mk3_plane_speed` | `130` | Mk3 flight speed |
-| `torpedo_drop_speed` | `90` | Effective in-water speed of a dropped torpedo |
+| `torpedo_drop_speed` | `135` | Effective in-water speed of a dropped torpedo |
 | `plane_torpedo_boost` | `1.0` | Extra multiplier on plane-dropped torpedoes only |
 | `torpedo_life` | `60` | Torpedo lifetime (s) |
-| `release_distance` | `1250` | Drop range from target (m) — historic Swordfish range |
+| `release_distance` | `900` | Drop range from target (m) — historic Swordfish range |
 | `rearm_distance` | `150` | "On deck" distance from the carrier (m) |
 | `rearm_time` | `135` | Deck cycle between sorties (s) |
 | `aa_range` | `2500` | AA engagement envelope (m) |
 | `aa_cycle` | `2.5` | Seconds between AA volleys |
-| `aa_plane_hp` | `2` | Hits a plane survives |
+| `aa_plane_hp` | `3` | Hits a plane survives |
 | `aa_crit_chance` | `0.20` | Chance any hit is a one-shot kill |
 | `aa_hit_mult` | `0.95` | Global hit-chance multiplier (planes are evasive) |
 | `aa_max_rolls` | `6` | Max AA rolls per ship per volley |
