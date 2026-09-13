@@ -429,3 +429,9 @@ blocks, PreInit arm spam. Strikes/waves/AA hits+kills/errors always log.
 OPTIMIZATION: CountSecondaries cached per-ship (10s TTL, cleared per
 battle) - eliminates ~1200 CalcCategory calls per AA cycle in big raids.
 Build: 0 warnings, 0 errors.
+
+USER TUNE ROUND (19:00): plane HP 2 -> 3; release 1250 -> 900m;
+torpedo_drop_speed 90 -> 135 (+50%); tube calibers 2.5/3.0/3.5 ->
+2.8/3.35/3.9 for ~+25% damage (quadratic warhead assumption; speed
+untouched - explicit base speeds + boost patch). Verify: hits ~3000 ->
+~3750 on same target class.

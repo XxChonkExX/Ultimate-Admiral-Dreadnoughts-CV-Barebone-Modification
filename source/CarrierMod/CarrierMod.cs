@@ -64,14 +64,14 @@ namespace CarrierMod
         // a broken config can only ever fall back to tuned defaults.
         private static bool VERBOSE = false;
         private static float MK1_SPEED = 90f, MK2_SPEED = 110f, MK3_SPEED = 130f;
-        private static float PLANE_DROP_SPEED = 90f;   // effective, before any boost
+        private static float PLANE_DROP_SPEED = 135f;   // effective, before any boost
         private static float PLANE_TORP_BOOST = 1f;    // extra multiplier on plane drops
         private static float TORP_LIFE = 60f;
-        private static float RELEASE_DIST = 1250f;
+        private static float RELEASE_DIST = 900f;
         private static float REARM_DIST = 150f;
         private static float REARM_TIME = 135f;
         private static float AA_RANGE = 2500f, AA_CYCLE = 2.5f, AA_CRIT = 0.20f, AA_HIT_MULT = 0.95f;
-        private static int PLANE_HP = 2, AA_MAX_ROLLS = 6;
+        private static int PLANE_HP = 3, AA_MAX_ROLLS = 6;
         private static float WAVE_GAP = 30f, LAUNCH_GAP = 3f, WAVE_TIME_LIMIT = 600f;
 
         private static float SpeedForMark(string mark)
@@ -110,18 +110,18 @@ namespace CarrierMod
                         "mk3_plane_speed,130",
                         "# Plane torpedo: EFFECTIVE drop speed (u/s) + extra multiplier.",
                         "# Effective = drop_speed x tube_factor x boost (defaults: 90).",
-                        "torpedo_drop_speed,90",
+                        "torpedo_drop_speed,135",
                         "plane_torpedo_boost,1.0",
                         "torpedo_life,60",
                         "# Strike geometry: release range, RTB distance, deck cycle (s).",
-                        "release_distance,1250",
+                        "release_distance,900",
                         "rearm_distance,150",
                         "rearm_time,135",
                         "# Anti-air: envelope (m), volley cycle (s), plane HP, one-shot",
                         "# crit chance, global hit-chance multiplier, max rolls/ship.",
                         "aa_range,2500",
                         "aa_cycle,2.5",
-                        "aa_plane_hp,2",
+                        "aa_plane_hp,3",
                         "aa_crit_chance,0.20",
                         "aa_hit_mult,0.95",
                         "aa_max_rolls,6",
