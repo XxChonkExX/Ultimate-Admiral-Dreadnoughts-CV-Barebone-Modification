@@ -1413,7 +1413,7 @@ namespace CarrierMod
                     // must die BEFORE the fleet save/load reads them. (The
                     // teardown prefix should have caught them; this is the
                     // backstop at the exact choke point.)
-                    try { DestroyAllPlanes("replay entry"); } catch { }
+                    try { RetirePlanes("replay entry"); } catch { }
                     ArmSpawnExperiment();
                 }
                 catch { }
@@ -2230,7 +2230,7 @@ namespace CarrierMod
         {
             public static void Run(Player exceptPlayer, Player exceptEnemy)
             {
-                try { DestroyAllPlanes("teardown"); } catch { }
+                try { RetirePlanes("teardown"); } catch { }
             }
         }
 
@@ -2250,7 +2250,33 @@ namespace CarrierMod
         // The battle scene is REUSED across replays — live plane objects (not
         // registries) are what every loader sweep finds (TAF's Reiniting lists
         // them via GetAllShips). Destroy them before the save/teardown reads.
-        private static int DestroyAllPlanes(string why)
+        // Save scrub: CustomBattleSavePlayerDesigns snapshots LIVE battle
+        // ships into the next battle's fleet. Prefix retires our planes first
+        // so the snapshot can never contain them (order guaranteed: prefix
+        // always runs before the method body enumerates).
+        private static class Patch_SaveScrub
+        {
+            public static void Run()
+            {
+                try
+                {
+                    try { _planeRecs.Clear(); } catch { }
+                    try { _squadronStates.Clear(); } catch { }
+                    RetirePlanes("save scrub");
+                }
+                catch { }
+            }
+        }
+
+        // The battle scene is REUSED across replays — live plane objects (not
+        // registries) are what every loader sweep finds (TAF's Reiniting lists
+        // them via GetAllShips). RETIRE (not destroy, not park): Erased status
+        // + disabled + DEACTIVATED GameObject. Deactivated objects are skipped
+        // by Unity enumerations (FindObjectsOfType/GetAllShips default to
+        // active-only), the object stays intact (no dangling refs — raw
+        // Destroy froze the next loader), and parked husks are still found.
+        // Returns kill count. Safe to call anywhere (setup, teardown, arm).
+        private static int RetirePlanes(string why)
         {
             int killed = 0;
             try
@@ -2273,8 +2299,8 @@ namespace CarrierMod
                             var go = s.gameObject;
                             if (go != null)
                             {
-                                try { UnityEngine.Object.DestroyImmediate(go); }
-                                catch { UnityEngine.Object.Destroy(go); }
+                                go.transform.position = new UnityEngine.Vector3(0f, -2000f, 0f);
+                                go.SetActive(false);
                                 killed++;
                             }
                         }
@@ -2284,30 +2310,14 @@ namespace CarrierMod
                 }
             }
             catch { }
-            if (killed > 0) Log("[CarrierMod] " + why + ": destroyed " + killed + " plane objects.");
+            if (killed > 0) Log("[CarrierMod] " + why + ": retired " + killed + " plane objects.");
             return killed;
-        }
-
-        // Save scrub: CustomBattleSavePlayerDesigns snapshots LIVE battle
-        // ships into the next battle's fleet. Prefix destroys our planes first
-        // so the snapshot can never contain them (order guaranteed: prefix
-        // always runs before the method body enumerates).
-        private static class Patch_SaveScrub
-        {
-            public static void Run()
-            {
-                try
-                {
-                    try { _planeRecs.Clear(); } catch { }
-                    try { _squadronStates.Clear(); } catch { }
-                    DestroyAllPlanes("save scrub");
-                }
-                catch { }
-            }
         }
 
         private static void DestroyStrayPlanes()
         {
+            // Retire (not destroy) unregistered planes: same visibility rules
+            // as RetirePlanes, but spares planes flying for the current battle.
             try
             {
                 var live = new System.Collections.Generic.HashSet<long>();
@@ -2333,11 +2343,23 @@ namespace CarrierMod
                         long ptr = 0;
                         try { ptr = (long)s.Pointer; } catch { }
                         if (live.Contains(ptr)) continue;
-                        try { UnityEngine.Object.Destroy(s.gameObject); killed++; } catch { }
+                        try { s.status = VesselEntity.Status.Erased; } catch { }
+                        try { s.enabled = false; } catch { }
+                        try
+                        {
+                            var go = s.gameObject;
+                            if (go != null)
+                            {
+                                go.transform.position = new UnityEngine.Vector3(0f, -2000f, 0f);
+                                go.SetActive(false);
+                                killed++;
+                            }
+                        }
+                        catch { }
                     }
                     catch { }
                 }
-                if (killed > 0) Log("[CarrierMod] destroyed " + killed + " stray planes from previous battle.");
+                if (killed > 0) Log("[CarrierMod] retired " + killed + " stray planes from previous battle.");
             }
             catch { }
         }
@@ -2579,30 +2601,11 @@ namespace CarrierMod
             Log("[CarrierMod] all waves airborne for " + carrierName + ".");
             _activeSettles--;
             // Leak sweep (last carrier standing only): CreateRandom throws
-            // leave design shells with no callback — PARK them deep (destroy
-            // leaves dangling refs that freeze the next loader).
+            // leave design shells with no callback - RETIRE them (parked
+            // husks are still enumerable; destroyed ones dangle).
             if (!_campaignMode && _activeSettles <= 0)
             {
-                int parked = 0;
-                try
-                {
-                    foreach (var s in UnityEngine.Object.FindObjectsOfType<Ship>())
-                    {
-                        try
-                        {
-                            if (s == null) continue;
-                            bool isD = false; try { isD = s.isDesign; } catch { }
-                            if (!isD) continue;
-                            string h = null; try { h = s.hull != null ? s.hull.name : null; } catch { }
-                            if (h != "plane_strike_1") continue;
-                            if (s.transform != null) s.transform.position = new UnityEngine.Vector3(0f, -2000f, 0f);
-                            parked++;
-                        }
-                        catch { }
-                    }
-                }
-                catch { }
-                if (parked > 0) Log("[CarrierMod] leak sweep: parked " + parked + " leftover plane design shells.");
+                try { RetirePlanes("leak sweep"); } catch { }
                 // Purge the designs we just minted from TAF's skirmish setup —
                 // otherwise the constructor/replay "Reiniting" rebuilds them as
                 // real ships and the loader dies on plane stats.
@@ -3197,6 +3200,8 @@ namespace CarrierMod
                 }
                 t.position = new UnityEngine.Vector3(0f, -2000f, 0f);
                 Log("[CarrierMod] plane " + r.idx + " hit the water. Lost from deck strength.");
+                try { if (r.ship != null) { r.ship.status = VesselEntity.Status.Erased; r.ship.enabled = false; } } catch { }
+                try { if (r.ship != null && r.ship.gameObject != null) r.ship.gameObject.SetActive(false); } catch { }
             }
             finally { }
         }
