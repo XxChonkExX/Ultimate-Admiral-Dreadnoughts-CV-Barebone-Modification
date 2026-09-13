@@ -1978,20 +1978,19 @@ namespace CarrierMod
                             }
                             foreach (var k in deadI) { instances.Remove(k); pInst++; }
                         }
-                        // shipAmounts: plane type count tells prep to BUILD planes
-                        // even with designs purged — remove the type entry too.
-                        var amounts = GetMember(sp, "shipAmounts") as System.Collections.Generic.Dictionary<ShipType, int>;
+                        // shipAmounts: TAF's is Dictionary<ShipType,
+                        // Dictionary<Guid, int>> (per-type per-design counts) —
+                        // prep regenerates designs for every type present, so
+                        // the plane TYPE KEY must go (a count-only entry still
+                        // rebuilds the whole squadron).
+                        var amounts = GetMember(sp, "shipAmounts") as System.Collections.Generic.Dictionary<ShipType, System.Collections.Generic.Dictionary<Guid, int>>;
                         if (amounts != null)
                         {
                             haveAmounts = amounts.Count;
                             var deadT = new System.Collections.Generic.List<ShipType>();
                             foreach (var kvp in amounts)
                             {
-                                try
-                                {
-                                    if (kvp.Key != null && kvp.Key.name == "plane") deadT.Add(kvp.Key);
-                                }
-                                catch { }
+                                try { if (kvp.Key != null && kvp.Key.name == "plane") deadT.Add(kvp.Key); } catch { }
                             }
                             foreach (var t in deadT) { amounts.Remove(t); purged++; pAmounts++; }
                         }
@@ -2001,6 +2000,35 @@ namespace CarrierMod
                 }
                 if (purged > 0) Log("[CarrierMod] TAF purge: removed " + purged + " plane entries." + report);
                 else Log("[CarrierMod] TAF purge: nothing to remove." + report);
+                // Vanilla layer: G.ui.skirmishSetup.player1/2.shipAmounts
+                // (Dictionary<ShipType, int>) syncs INTO the TAF dicts during
+                // setup — purge the plane type key there too.
+                try
+                {
+                    var sk = GetMember(G.ui, "skirmishSetup");
+                    if (sk != null)
+                    {
+                        foreach (var playerName in new string[] { "player1", "player2" })
+                        {
+                            try
+                            {
+                                var vp = GetMember(sk, playerName);
+                                if (vp == null) continue;
+                                var va = GetMember(vp, "shipAmounts") as System.Collections.Generic.Dictionary<ShipType, int>;
+                                if (va == null) continue;
+                                var deadV = new System.Collections.Generic.List<ShipType>();
+                                foreach (var kvp in va)
+                                {
+                                    try { if (kvp.Key != null && kvp.Key.name == "plane") deadV.Add(kvp.Key); } catch { }
+                                }
+                                foreach (var t in deadV) { va.Remove(t); purged++; }
+                            }
+                            catch { }
+                        }
+                        if (purged > 0) Log("[CarrierMod] TAF purge: total with vanilla layer " + purged + ".");
+                    }
+                }
+                catch { }
                 // BattleManager.restartBattleShips feeds the replay path
                 // directly — strip plane hulls there too.
                 try
