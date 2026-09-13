@@ -130,6 +130,9 @@ namespace CarrierMod
                         "wave_gap,30",
                         "launch_gap,3",
                         "wave_time_limit,600",
+                        "# After a custom carrier battle, disable the results-screen",
+                        "# replay button (its reload freezes on plane divisions).",
+                        "disable_replay_button,true",
                     });
                 }
             }
@@ -170,6 +173,7 @@ namespace CarrierMod
                             case "wave_gap": WAVE_GAP = float.Parse(val); break;
                             case "launch_gap": LAUNCH_GAP = float.Parse(val); break;
                             case "wave_time_limit": WAVE_TIME_LIMIT = float.Parse(val); break;
+                            case "disable_replay_button": DISABLE_REPLAY_BUTTON = val == "true" || val == "1" || val == "yes"; break;
                         }
                     }
                     catch { }
@@ -2314,6 +2318,71 @@ namespace CarrierMod
             return killed;
         }
 
+        private static bool DISABLE_REPLAY_BUTTON = true;
+
+        // REPLAY KILL (user request): after a custom carrier battle, the
+        // results-screen replay button reloads the poisoned fleet save and
+        // freezes on plane divisions. Neutralize it once per battle exit:
+        // scan active Buttons, log the inventory (diagnostic), and disable
+        // text matches. Scoped to custom battles with our carriers only.
+        private static System.Collections.IEnumerator DisableReplayButtonSoon()
+        {
+            yield return new UnityEngine.WaitForSeconds(4f);
+            yield return new UnityEngine.WaitForSeconds(4f);
+            try
+            {
+                if (!DISABLE_REPLAY_BUTTON) yield break;
+                try { if (GameManager.IsCampaign) yield break; } catch { }
+                if (_spawnedCarrierPtrs.Count == 0 && _planeRecs.Count == 0) yield break;
+                var buttons = UnityEngine.Object.FindObjectsOfType<UnityEngine.UI.Button>();
+                if (buttons == null) yield break;
+                int scanned = 0, killed = 0;
+                foreach (var b in buttons)
+                {
+                    try
+                    {
+                        if (b == null) continue;
+                        var go = b.gameObject;
+                        if (go == null || !go.activeInHierarchy) continue;
+                        string text = "";
+                        try
+                        {
+                            var tmp = go.GetComponentInChildren<Il2CppTMPro.TMP_Text>();
+                            if (tmp != null) text = tmp.text;
+                        }
+                        catch { }
+                        if (string.IsNullOrEmpty(text))
+                        {
+                            try
+                            {
+                                var t = go.GetComponentInChildren<UnityEngine.UI.Text>();
+                                if (t != null) text = t.text;
+                            }
+                            catch { }
+                        }
+                        string path = go.name;
+                        try
+                        {
+                            var p = go.transform.parent;
+                            int depth = 0;
+                            while (p != null && depth < 6) { path = p.name + "/" + path; p = p.parent; depth++; }
+                        }
+                        catch { }
+                        scanned++;
+                        if (scanned <= 40) Log("[CarrierMod] endUI button: " + path + " text='" + text + "'");
+                        string low = (text ?? "").ToLowerInvariant();
+                        if (low.Contains("play again") || low.Contains("replay") || low.Contains("rematch"))
+                        {
+                            try { b.interactable = false; killed++; Log("[CarrierMod] replay button disabled: " + path); } catch { }
+                        }
+                    }
+                    catch { }
+                }
+                Log("[CarrierMod] endUI scan done: " + scanned + " buttons, " + killed + " replay disabled.");
+            }
+            catch { }
+        }
+
         private static void DestroyStrayPlanes()
         {
             // Retire (not destroy) unregistered planes: same visibility rules
@@ -2452,6 +2521,7 @@ namespace CarrierMod
                     {
                         Log("[CarrierMod] left battle; purging plane designs before setup snapshot.");
                         try { PurgeTafPlaneDesigns(); } catch { }
+                        try { MelonCoroutines.Start(DisableReplayButtonSoon()); } catch { }
                     }
                     wasBattle = inBattle;
                 }

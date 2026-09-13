@@ -17,3 +17,4 @@ aa_max_rolls,6
 wave_gap,30
 launch_gap,3
 wave_time_limit,600
+disable_replay_button,true
