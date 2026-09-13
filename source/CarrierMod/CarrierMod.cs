@@ -268,6 +268,9 @@ namespace CarrierMod
                         else Log("[CarrierMod] patch SKIP: RebuildShipInSkirmish not found");
                     }
                     catch (Exception ex) { Log("[CarrierMod] rebuild gate failed: " + ex.Message); }
+                    // TEARDOWN ERASE: erase our planes via the game's own API
+                    // at every battle exit, before teardown sweeps run.
+                    PatchOne(hm, "CampaignController.CleanupShips", typeof(CampaignController), "CleanupShips", typeof(Patch_TeardownErase), null);
                     // Wing-only strike boost: Torpedo.Create(Part from, ...) — the
                     // Part arg identifies the firing tube, so the boost is
                     // per-tube and cannot leak to ship torpedoes. Param name
@@ -2200,6 +2203,45 @@ namespace CarrierMod
                 }
                 catch { }
                 return true;
+            }
+        }
+
+        // ===== TEARDOWN ERASE =====
+        // CampaignController.CleanupShips fires at every battle exit (custom +
+        // campaign). Prefix: erase ALL our plane objects through the game's OWN
+        // API (VesselEntity.TryToEraseVessel — the same call the cleanup uses
+        // internally) BEFORE the teardown sweeps run. Erased vessels drop out
+        // of every game registry cleanly — no dangling refs (raw Destroy
+        // froze the next loader), no parked husks for the next save to find.
+        private static class Patch_TeardownErase
+        {
+            public static void Run(Player exceptPlayer, Player exceptEnemy)
+            {
+                try
+                {
+                    int n = 0;
+                    Ship[] ships = null;
+                    try { ships = UnityEngine.Object.FindObjectsOfType<Ship>(); } catch { }
+                    if (ships != null)
+                    {
+                        foreach (var s in ships)
+                        {
+                            try
+                            {
+                                if (s == null) continue;
+                                string h = null;
+                                try { h = s.hull != null ? s.hull.name : null; } catch { }
+                                if (h != "plane_strike_1") continue;
+                                try { VesselEntity.TryToEraseVessel(s); n++; } catch { }
+                            }
+                            catch { }
+                        }
+                    }
+                    try { _planeRecs.Clear(); } catch { }
+                    try { _squadronStates.Clear(); } catch { }
+                    if (n > 0) Log("[CarrierMod] teardown: erased " + n + " planes via TryToEraseVessel.");
+                }
+                catch { }
             }
         }
 
